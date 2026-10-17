@@ -4,7 +4,7 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
 
 | Plasma | Synthwave | Fireworks | Chart | Trip computer |
 |---|---|---|---|---|
-| ![Plasma](docs/screenshots/plasma.png) | ![Synthwave](docs/screenshots/synthwave.png) | ![Fireworks](docs/screenshots/feuerwerk.png) | ![Chart](docs/screenshots/diagramm.png) | ![Trip computer](docs/screenshots/bordcomputer.png) |
+| ![Plasma](extras/docs/screenshots/plasma.png) | ![Synthwave](extras/docs/screenshots/synthwave.png) | ![Fireworks](extras/docs/screenshots/feuerwerk.png) | ![Chart](extras/docs/screenshots/diagramm.png) | ![Trip computer](extras/docs/screenshots/bordcomputer.png) |
 
 *These are real screenshots, read back from the display's RAM over SPI.*
 
@@ -63,7 +63,7 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
   - `setPartialMode()` to show only some panel rows.
   - `enableSleep()` and `enableDisplay()`.
 - **Frame rate control** (`setFrameRate()`).
-- **Fallback for other Arduino platforms** through `SPIClass`, without the ESP32 accelerations.
+- **Fallback for other boards** (ESP32-S2/S3/C3, other Arduino platforms) through `SPIClass`, without the ESP32 accelerations. The macro `ILI9341_GFX_ESP32` is 1 when the fast path is active.
 
 ### Framebuffer (`ILI9341_Framebuffer`, `ILI9341_Framebuffer8`)
 
@@ -84,7 +84,7 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
 - **All Adafruit_GFX drawing functions** write into RAM. Lines, filled triangles, filled circles and text have their own fast implementations, pixel-identical to Adafruit_GFX.
 - **Direct buffer access:** `getRow()`, `markDirty()`, `getPixel()` and `pushImage()`.
 - **Screenshots and checks:**
-  - `screenshot()` sends a screenshot over any `Print` stream, and `tools/tftctl.py` saves it as PNG.
+  - `screenshot()` sends a screenshot over any `Print` stream, and `extras/tools/tftctl.py` saves it as PNG.
   - `readDisplayRow()` is for verification.
 
 ## Comparison with other libraries
@@ -113,7 +113,7 @@ All five libraries ran the same tests on the same hardware: NodeMCU-32S with an 
 **Notes:**
 - **Large fills are limited by the wire.** At 40 MHz, about 5 KB fits through per millisecond. The large fills (FillScreen, FilledRects, FilledRoundRects) are within about 4 % of that limit for every fast library.
 - **How the animation test works:** It redraws a full-screen scene every frame and shows it without flicker. ILI9341_GFX uses its 16-bit framebuffer with dirty regions. The others use a full-screen sprite or canvas pushed every frame, and LovyanGFX had to use 8 bit for lack of RAM. "–" means the library had no full-screen buffer that fit into RAM.
-- **Library versions:** Adafruit_ILI9341 1.6.1, TFT_eSPI 2.5.43, LovyanGFX 1.1.16 and Arduino_GFX 1.4.9. The benchmark source is in [`bench/`](bench/).
+- **Library versions:** Adafruit_ILI9341 1.6.1, TFT_eSPI 2.5.43, LovyanGFX 1.1.16 and Arduino_GFX 1.4.9. The benchmark source is in [`extras/bench/`](extras/bench/).
 
 ### Features
 
@@ -121,7 +121,7 @@ All five libraries ran the same tests on the same hardware: NodeMCU-32S with an 
 |---|:---:|:---:|:---:|:---:|:---:|
 | Derives from `Adafruit_GFX` | ✓ | – | – | – | ✓ |
 | Supported controllers | ILI9341 | many | many | many | ILI9341 |
-| Supported MCUs | all Arduino | ESP32, ESP8266, RP2040, STM32, … | ESP32 family, ESP8266, RP2040, SAMD, … | many | classic ESP32 (others: plain SPI fallback) |
+| Supported MCUs | all Arduino | ESP32, ESP8266, RP2040, STM32, … | ESP32 family, ESP8266, RP2040, SAMD, … | many | classic ESP32 (fast path), any Arduino board (plain SPI) |
 | Configuration | constructor | compile-time `User_Setup.h` | config class | constructor | constructor |
 | DMA transfers on ESP32 | – | ✓ (`pushImageDMA`) | ✓ | ✓ (some buses) | ✓ (all writes asynchronous) |
 | Command + data in one SPI transfer (hardware D/C) | – | – | – | – | ✓ |
@@ -148,7 +148,7 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 
 | Item | Requirement |
 |---|---|
-| MCU | **Classic ESP32** (ESP32-D0WD/WROOM/WROVER, e.g. NodeMCU-32S, DevKitC). The accelerated driver programs the SPI3 (VSPI) registers of the original ESP32 directly. ESP32-S2/S3/C3/C6 are **not** supported. |
+| MCU | **Classic ESP32** (ESP32-D0WD/WROOM/WROVER, e.g. NodeMCU-32S, DevKitC) for the fast path. The accelerated driver programs the SPI3 (VSPI) registers of the original ESP32 directly. ESP32-S2/S3/C3/C6 and other Arduino boards compile with the plain `SPIClass` path, without DMA, packed mode, framebuffer VSync or readback. That path is only tested in the host simulator. |
 | Framework | Arduino core for ESP32 2.0.x (ESP-IDF 4.4), tested with 2.0.17 under PlatformIO. Core 3.x is untested. |
 | Display | ILI9341 240×320 module in **4-wire SPI mode** (separate D/C line), 3.3 V logic |
 | SPI clock | 40 MHz (default). The ESP32 can go up to 80 MHz, but the tested panel failed the readback check there. `autoSpeed()` finds the limit for your panel. |
@@ -177,19 +177,24 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 
 ## Quick start
 
-PlatformIO (`platformio.ini`):
+### Installation
 
-```ini
-[env:esp32]
-platform = espressif32
-board = nodemcu-32s
-framework = arduino
-lib_deps = adafruit/Adafruit GFX Library@^1.11.9
-build_unflags = -Os
-build_flags = -O2
-```
+- **Arduino IDE:** Install `ILI9341_GFX` through the Library Manager. *Adafruit GFX Library* is installed with it. Until the library appears in the Library Manager, download the repository as ZIP and use *Sketch → Include Library → Add .ZIP Library*.
+- **PlatformIO:** Add the library to `platformio.ini`:
 
-Copy `lib/ILI9341_GFX` into your project's `lib/` folder. In the Arduino IDE, copy it to `Arduino/libraries/` instead.
+  ```ini
+  [env:esp32]
+  platform = espressif32
+  board = nodemcu-32s
+  framework = arduino
+  lib_deps = JKBusse/ILI9341_GFX
+  ; until the library appears in the PlatformIO registry:
+  ; lib_deps = https://github.com/JKBusse/ILI9341_GFX.git
+  build_unflags = -Os
+  build_flags = -O2
+  ```
+
+### Example
 
 ```cpp
 #include <ILI9341_GFX.h>
@@ -213,8 +218,8 @@ void loop() {
 ```
 
 There are two examples:
-- [`Basic`](lib/ILI9341_GFX/examples/Basic/Basic.ino) draws directly on the display.
-- [`Framebuffer`](lib/ILI9341_GFX/examples/Framebuffer/Framebuffer.ino) is a bouncing-balls animation with VSync.
+- [`Basic`](examples/Basic/Basic.ino) draws directly on the display.
+- [`Framebuffer`](examples/Framebuffer/Framebuffer.ino) is a bouncing-balls animation with VSync.
 
 ## API reference
 
@@ -338,24 +343,29 @@ ESP32 quirks found along the way are documented in the source comments: DMA rese
 ## Project layout, building and testing
 
 ```
-lib/ILI9341_GFX/        the library (driver, framebuffer, examples)
-src/main.cpp            demo firmware: 5 scenes, serial measurement interface
-bench/                  benchmark against other libraries
-tools/tftctl.py         control the demo, read fps/verification, save screenshots as PNG
-tools/benchrun.py       flash all benchmark firmwares and print a comparison table
-test/host/              host tests: pixel-identical to Adafruit_GFX
-docs/screenshots/       images for this README
+src/                    the library: driver and framebuffer
+examples/               Arduino examples
+library.properties      Arduino Library Manager metadata
+library.json            PlatformIO registry metadata
+extras/demo/            demo firmware: 5 scenes, serial measurement interface
+extras/bench/           benchmark against other libraries
+extras/tools/tftctl.py  control the demo, read fps/verification, save screenshots as PNG
+extras/tools/benchrun.py  flash all benchmark firmwares and print a comparison table
+extras/test/host/       host tests: pixel-identical to Adafruit_GFX
+extras/docs/            images for this README
 ```
 
-The project builds with [PlatformIO](https://platformio.org/). The serial port is set in `platformio.ini` (`/dev/cu.usbserial-0001`), so adjust it for your machine.
+The repository is both the library and a PlatformIO project for the demo, the benchmark and the tests. `platformio.ini` sets `src_dir = extras/demo` and links the library from the repository root (`symlink://.`). The Arduino IDE ignores `extras/`.
+
+The development project builds with [PlatformIO](https://platformio.org/). The serial port is set in `platformio.ini` (`/dev/cu.usbserial-0001`), so adjust it for your machine.
 
 ```sh
 pio run -e nodemcu-32s -t upload                  # demo firmware
 pio device monitor                                # 921600 baud
-test/host/run.sh                                  # host tests (after one pio run)
-python3 tools/benchrun.py                         # benchmark all libraries
-python3 tools/benchrun.py bench_ours               # benchmark this library only
-python3 tools/tftctl.py t T20 D V10 -t 10         # on-board checks
+extras/test/host/run.sh                           # host tests (after one pio run)
+python3 extras/tools/benchrun.py                  # benchmark all libraries
+python3 extras/tools/benchrun.py bench_ours       # benchmark this library only
+python3 extras/tools/tftctl.py t T20 D V10 -t 10  # on-board checks
 ```
 
 **What the host tests do:**
@@ -387,16 +397,20 @@ Commands (each followed by a newline):
 | `i1`/`i0`, `p<a>,<b>`/`p0`, `z1`/`z0` | Idle mode, partial display, sleep |
 | `c<cmd> <param>…`, `R<cmd> <n>`, `g` | Send a raw command, read a register, sample the scanline |
 
-`tools/tftctl.py` drives this from the PC:
+`extras/tools/tftctl.py` drives this from the PC:
 
 ```sh
-python3 tools/tftctl.py s1 @3 V10 -t 5            # Synthwave, wait 3 s, verify 10 frames
-python3 tools/tftctl.py s4 @4 --shot chart.png    # screenshot as PNG
-python3 tools/tftctl.py --listen shots/           # Enter or BOOT button = screenshot
+python3 extras/tools/tftctl.py s1 @3 V10 -t 5     # Synthwave, wait 3 s, verify 10 frames
+python3 extras/tools/tftctl.py s4 @4 --shot chart.png  # screenshot as PNG
+python3 extras/tools/tftctl.py --listen shots/    # Enter or BOOT button = screenshot
 ```
 
 ## Limitations
 
-- **Hardware.** The library supports one controller (ILI9341) and one MCU family (classic ESP32) on the fast path.
+- **Hardware.** The library supports one controller (ILI9341). The fast path needs a classic ESP32, while other boards only get the plain SPI path.
 - **Missing features.** There are no anti-aliased fonts, no touch support and no image decoders. They combine fine with external libraries, for example XPT2046_Touchscreen on HSPI, or a JPEG decoder feeding `pushImage()`.
 - **Language.** The source code comments are in German.
+
+## License
+
+[MIT](LICENSE). The library uses the [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) (BSD license) as a dependency, including its built-in 5×7 font.

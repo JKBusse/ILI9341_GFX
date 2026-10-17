@@ -2,7 +2,7 @@
 
 // Heiße Zeichenpfade ins IRAM: gleichbleibende Geschwindigkeit ohne
 // Flash-Cache-Fehlzugriffe (gemessen: je nach Code-Lage sonst bis 25 % Schwankung)
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 #define FAST_ATTR IRAM_ATTR
 #else
 #define FAST_ATTR
@@ -13,7 +13,7 @@
 // Klassischer 5x7-Font von Adafruit_GFX (dort static, daher hier eingebunden)
 #include "glcdfont.c"
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 #include "driver/spi_common.h"
 #include "esp_heap_caps.h"
 #include "hal/spi_ll.h"
@@ -91,7 +91,7 @@ static void runInitSequence(ILI9341_GFX &tft) {
   }
 }
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 // ===========================================================================
 // ESP32: eigener Treiber direkt auf den SPI3-Registern
 //
@@ -1063,7 +1063,7 @@ void ILI9341_GFX::sendCommand(uint8_t cmd, const uint8_t *data, uint8_t len) {
 
 FAST_ATTR void ILI9341_GFX::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   uint16_t x1 = x + w - 1, y1 = y + h - 1;
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   flushBuffer();
   if (directOk()) {
     directWindow(x, y, x1, y1);
@@ -1099,7 +1099,7 @@ FAST_ATTR void ILI9341_GFX::drawPixel(int16_t x, int16_t y, uint16_t color) {
 // inline über die Register, sonst über Befehlsliste/DMA
 FAST_ATTR void ILI9341_GFX::fillRectFast(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
   uint32_t n = (uint32_t)w * h;
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   if (_bufFill) flushBuffer();
   // Nur noch ein kurzer Rest in der Liste: abwarten und direkt zeichnen. Der
   // Registerweg ist für kleine Flächen schneller als die Liste (ein Interrupt
@@ -1514,7 +1514,7 @@ void ILI9341_GFX::setPartialMode(bool enable, uint16_t first, uint16_t last) {
   sendCommand(ILI9341_PTLON);
 }
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 // Prüfmuster für autoSpeed: deterministisch, damit beim Vergleich nichts
 // gespeichert werden muss
 static inline uint16_t testPixel(uint32_t i, uint32_t seed) {

@@ -5,7 +5,7 @@
 // Klassischer 5x7-Font von Adafruit_GFX (dort static, daher hier eingebunden)
 #include "glcdfont.c"
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 #include "esp_heap_caps.h"
 #endif
 
@@ -44,7 +44,7 @@ static inline void emitPx(ILI9341_GFX &tft, const uint16_t *src, uint32_t n, con
   tft.writePixels(src, n);
 }
 static void emitPx(ILI9341_GFX &tft, const uint8_t *src, uint32_t n, const uint16_t *lut) {
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   // Direkt in den DMA-Puffer umrechnen
   while (n) {
     uint32_t cnt;
@@ -117,7 +117,7 @@ template <typename T>
 bool ILI9341_FramebufferT<T>::begin() {
   if (_nChunks) return true;
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   if (psramFound()) {
     _chunks[0] = (T *)ps_malloc(TOTAL_PX * sizeof(T));
     if (_chunks[0]) {
@@ -159,7 +159,7 @@ bool ILI9341_FramebufferT<T>::begin() {
       _hashChunks[h] = nullptr;
     }
     _hashSingle = true;
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
     // Hashes werden nur 32-bit-weise gelesen/geschrieben und passen daher
     // auch in den IRAM-Heap, der für normales malloc nicht nutzbar ist
     _hashChunks[0] = (uint32_t *)heap_caps_malloc(MAX_SEGS * sizeof(uint32_t),
@@ -243,7 +243,7 @@ template <typename T> void ILI9341_FramebufferT<T>::scroll(int16_t delta) {
   int16_t ofs = (int16_t)(_vsp - _tfa) + gd;
   ofs = ((ofs % len) + len) % len;
   _vsp = _tfa + ofs;
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   if (!_vsync) // im VSync-Modus schaltet das nächste display() tearing-frei um
 #endif
   {
@@ -291,7 +291,7 @@ template <typename T> void ILI9341_FramebufferT<T>::sendRect(int16_t x0, int16_t
   }
 }
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 template <typename T> void ILI9341_FramebufferT<T>::screenshot(Print &out) {
   uint16_t line[ILI9341_TFTHEIGHT];
   out.printf("SHOT %d %d\n", _width, _height);
@@ -828,7 +828,7 @@ int32_t ILI9341_FramebufferT<T>::cost(uint32_t mask, int32_t h) const {
 template <typename T>
 void ILI9341_FramebufferT<T>::display() {
   if (!_nChunks) return;
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   if (_vsync) {
     displayVSync();
     return;
@@ -915,7 +915,7 @@ void ILI9341_FramebufferT<T>::display() {
   _lastSent = sent;
 }
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 // ===========================================================================
 // VSync-Modus
 //

@@ -34,7 +34,9 @@ void setup() {
     while (true) delay(1000);
   }
   fb.setRotation(1);
+#if ILI9341_GFX_ESP32 // fast path (classic ESP32) only
   fb.setVSync(true); // needs MISO (reads the panel's scanline)
+#endif
 
   for (Ball &b : balls) {
     b.r = random(6, 20);

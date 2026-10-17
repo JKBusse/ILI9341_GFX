@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Spielt die Benchmark-Firmwares (bench/) nacheinander auf und sammelt die Ergebnisse.
+"""Spielt die Benchmark-Firmwares (extras/bench/) nacheinander auf und sammelt die Ergebnisse.
 
   benchrun.py                       alle Bibliotheken
   benchrun.py bench_ours bench_lovyan
-Ergebnis: bench/results.json und eine Tabelle auf der Konsole.
+Ergebnis: extras/bench/results.json und eine Tabelle auf der Konsole.
 """
 import json
 import os
@@ -16,7 +16,7 @@ import serial
 PIO = os.path.expanduser("~/.platformio/penv/bin/pio")
 PORT = "/dev/cu.usbserial-0001"
 ENVS = ["bench_adafruit", "bench_tftespi", "bench_lovyan", "bench_arduinogfx", "bench_ours"]
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # Projektwurzel
 
 
 def run_env(env):
@@ -51,7 +51,7 @@ def run_env(env):
 
 def main():
     envs = sys.argv[1:] or ENVS
-    path = os.path.join(ROOT, "bench", "results.json")
+    path = os.path.join(ROOT, "extras", "bench", "results.json")
     results = json.load(open(path)) if os.path.exists(path) else {}
     for env in envs:
         print(f"== {env}", flush=True)

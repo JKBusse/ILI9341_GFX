@@ -2,7 +2,20 @@
   "name": "ILI9341_GFX",
   "version": "1.0.0",
   "description": "Fast ILI9341 SPI driver for the ESP32, compatible with Adafruit_GFX: register-level DMA driver, hardware D/C via SPI dual output, framebuffer with dirty-region updates, tear-free VSync and hardware scrolling",
-  "keywords": "ili9341, tft, display, adafruit_gfx, spi, dma, esp32, framebuffer",
+  "keywords": "ili9341, tft, display, adafruit_gfx, spi, dma, esp32, framebuffer, vsync",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JKBusse/ILI9341_GFX.git"
+  },
+  "homepage": "https://github.com/JKBusse/ILI9341_GFX",
+  "authors": [
+    {
+      "name": "JKBusse",
+      "url": "https://github.com/JKBusse",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
   "frameworks": "arduino",
   "platforms": "*",
   "dependencies": [
@@ -18,5 +31,15 @@
   ],
   "examples": [
     "examples/*/*.ino"
-  ]
+  ],
+  "export": {
+    "exclude": [
+      "extras/bench",
+      "extras/demo",
+      "extras/test",
+      "extras/tools",
+      ".vscode",
+      "platformio.ini"
+    ]
+  }
 }

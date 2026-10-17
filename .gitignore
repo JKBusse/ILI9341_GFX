@@ -6,9 +6,9 @@
 .vscode/ipch
 
 # Host-Tests
-test/host/build/
+extras/test/host/build/
 
-# Lose Screenshots aus tftctl.py (Doku-Bilder liegen in docs/screenshots/)
+# Lose Screenshots aus tftctl.py (Doku-Bilder liegen in extras/docs/screenshots/)
 /shot_*.png
 /bild*.png
 

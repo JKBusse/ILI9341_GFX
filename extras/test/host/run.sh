@@ -8,8 +8,8 @@
 # Voraussetzung: einmal "pio run -e nodemcu-32s" (lädt Adafruit GFX nach .pio/libdeps).
 set -e
 cd "$(dirname "$0")"
-ROOT=../..
-LIB=$ROOT/lib/ILI9341_GFX/src
+ROOT=../../..
+LIB=$ROOT/src
 GFX="$ROOT/.pio/libdeps/nodemcu-32s/Adafruit GFX Library"
 [ -d "$GFX" ] || { echo "Adafruit GFX fehlt: erst 'pio run -e nodemcu-32s' ausführen"; exit 1; }
 CXX=${CXX:-c++}
@@ -26,6 +26,6 @@ build directtest directtest.cpp
 fail=0
 for t in fbtest fbtest8 texttest directtest; do
   if ./build/$t > build/$t.log; then echo "ok      $t: $(tail -1 build/$t.log)"
-  else echo "FEHLER  $t (Details: test/host/build/$t.log)"; fail=1; fi
+  else echo "FEHLER  $t (Details: extras/test/host/build/$t.log)"; fail=1; fi
 done
 exit $fail

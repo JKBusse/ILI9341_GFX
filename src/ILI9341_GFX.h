@@ -11,7 +11,16 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 
-#if defined(ESP32)
+// Schneller Pfad (Register, DMA, gepackter Modus) nur auf dem klassischen
+// ESP32: er nutzt SPI3/VSPI und dessen GPIO-Matrix-Signale direkt. ESP32-S2/
+// S3/C3/... und andere Plattformen laufen über die Arduino-SPI-Klasse.
+#if defined(ESP32) && (!defined(CONFIG_IDF_TARGET) || defined(CONFIG_IDF_TARGET_ESP32))
+#define ILI9341_GFX_ESP32 1
+#else
+#define ILI9341_GFX_ESP32 0
+#endif
+
+#if ILI9341_GFX_ESP32
 #include <esp_intr_alloc.h>
 struct lldesc_s;
 #endif
@@ -87,7 +96,7 @@ struct lldesc_s;
 #define ILI9341_PINK        0xFC18
 #endif
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 #define ILI9341_GFX_DEFAULT_FREQ 40000000UL
 #else
 #define ILI9341_GFX_DEFAULT_FREQ 16000000UL
@@ -95,7 +104,7 @@ struct lldesc_s;
 
 class ILI9341_GFX : public Adafruit_GFX {
 public:
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /**
    * ESP32: eigener Treiber direkt auf den VSPI-Registern (SPI3) mit DMA und
    * interruptgesteuerter Befehlsliste. Der Bus wird exklusiv belegt, die
@@ -120,7 +129,7 @@ public:
   ILI9341_GFX(int8_t cs, int8_t dc, int8_t rst = -1, SPIClass *spi = &SPI);
 #endif
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /**
    * @param dmaBuffers Anzahl DMA-Puffer à 6,4 KB (2..16). Mehr Puffer = mehr
    *        Überlappung von Zeichnen und Übertragen, aber weniger freier Heap.
@@ -187,7 +196,7 @@ public:
 
   void sendCommand(uint8_t cmd, const uint8_t *data = nullptr, uint8_t len = 0);
   uint8_t readcommand8(uint8_t cmd, uint8_t index = 0);
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /** Liest einen Bereich aus dem Display-RAM (braucht MISO). */
   void readRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t *out);
   /** Sendet cmd und liest danach len Bytes roh zurück (inkl. evtl. Dummy-Byte). */
@@ -226,7 +235,7 @@ public:
   /** MADCTL-Wert der aktuellen Rotation. */
   uint8_t rotationMadctl() const;
   uint32_t spiSpeed() const { return _freq; }
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 #endif
 
   void setScrollMargins(uint16_t top, uint16_t bottom);
@@ -246,7 +255,7 @@ public:
    * aus; beim Verlassen werden die Scroll-Einstellungen wiederhergestellt.
    */
   void setPartialMode(bool enable, uint16_t first = 0, uint16_t last = ILI9341_TFTHEIGHT - 1);
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /**
    * Ermittelt den höchsten fehlerfreien SPI-Takt (braucht MISO): schreibt für
    * jeden Kandidaten Zufallsdaten und viele kleine Fenster und prüft sie per
@@ -280,7 +289,7 @@ private:
   // Zuletzt gesetzte Spalten/Zeilen, um redundante CASET/PASET zu sparen
   uint16_t _cx0, _cx1, _cy0, _cy1;
 
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
 public:
   void isrHandler(); // nur für die Interrupt-Routine
 

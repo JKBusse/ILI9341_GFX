@@ -40,7 +40,7 @@ public:
    * Zeilen zu größeren Rechtecken zusammen, solange das billiger ist.
    */
   void setWindowCost(int32_t px) { _windowCost = px; }
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /**
    * Tearing-freie Updates (braucht MISO): display() synchronisiert sich über
    * die Scanline des Panels mit dem Bildaufbau und schreibt immer direkt
@@ -72,13 +72,13 @@ public:
    * Streifen am Ende neu zeichnen und display() aufrufen.
    */
   void scroll(int16_t delta);
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   /** Liest zurück, was auf dem Display in Zeile y zu sehen ist (für Tests, braucht MISO). */
   void readDisplayRow(int16_t y, uint16_t *out);
   /**
    * Screenshot (braucht MISO): schreibt "SHOT <w> <h>\n", dann w*h Pixel
    * RGB565 (MSB zuerst) und ein abschließendes "\n" nach out, z.B. Serial.
-   * tools/tftctl.py --listen speichert das als PNG.
+   * extras/tools/tftctl.py --listen speichert das als PNG.
    */
   void screenshot(Print &out);
 #endif
@@ -145,7 +145,7 @@ private:
   static constexpr uint16_t MAX_SEGS = ILI9341_TFTHEIGHT * ((ILI9341_TFTWIDTH + SEG_PX - 1) / SEG_PX);
 
   void mapRows();
-#if defined(ESP32)
+#if ILI9341_GFX_ESP32
   void displayVSync();
   struct RunU {
     int16_t u0, u1;
