@@ -16,3 +16,4 @@ extras/test/host/build/
 .claude/
 .DS_Store
 __pycache__/
+extras/tools/.mapcache/

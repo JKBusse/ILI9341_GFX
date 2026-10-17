@@ -6,6 +6,7 @@
 #include <Fonts/FreeSansBold18pt7b.h>
 #include "ILI9341_GFX.h"
 #include "ILI9341_Framebuffer.h"
+#include "nav_map.h"
 
 // Verdrahtung NodeMCU-32S (VSPI): SCK=18, MOSI=23, MISO=19
 #define TFT_CS  15
@@ -509,11 +510,463 @@ void frame() {
 } // namespace chart
 
 // ===========================================================================
+// Szene 6: Navigation durch Hannover
+// Echte Kartendaten (OpenStreetMap) und eine echte Route mit Abbiegehinweisen
+// (OSRM), erzeugt von extras/tools/mapgen.py. Die Karte dreht sich in
+// Fahrtrichtung, jedes Bild wird komplett neu gezeichnet.
+// ===========================================================================
+namespace nav {
+using namespace navmap;
+
+const int NR = sizeof(ROUTE) / sizeof(ROUTE[0]);
+const int NM = sizeof(MANEUVERS) / sizeof(MANEUVERS[0]);
+const int NS = sizeof(STREETS) / sizeof(STREETS[0]);
+const float CAR_X = 160, CAR_Y = 158; // Position des Autos auf dem Bildschirm
+const float TIME_SCALE = 2.0f;        // Simulation läuft doppelt so schnell wie die Uhr
+const float V_MAX = 50 / 3.6f;        // m/s
+
+float rcum[NR]; // Streckenlänge bis Routenpunkt i (m)
+bool ready = false;
+float dist, speed, heading, zoom, simT, arriveT;
+
+// Kamera (in Karteneinheiten) und Transformation Welt -> Bildschirm
+float camX, camY, rc, rs, k;
+
+// Schnelles Runden (lroundf/ceilf kosten auf dem ESP32 ~200 Takte); gilt für |v| < 65536
+static inline int IRAM_ATTR rnd(float v) { return (int)(v + 65536.5f) - 65536; }
+
+static inline void IRAM_ATTR toScreen(float wx, float wy, float &sx, float &sy) {
+  float dx = wx - camX, dy = wy - camY;
+  sx = CAR_X + (dx * rc - dy * rs) * k;
+  sy = CAR_Y + (dx * rs + dy * rc) * k;
+}
+
+void routeAt(float s, float &x, float &y) { // Punkt auf der Route (Karteneinheiten)
+  s = constrain(s, 0.0f, rcum[NR - 1]);
+  int i = 1;
+  while (i < NR - 1 && rcum[i] < s) i++;
+  float t = (s - rcum[i - 1]) / max(1e-3f, rcum[i] - rcum[i - 1]);
+  x = ROUTE[i - 1][0] + t * (ROUTE[i][0] - ROUTE[i - 1][0]);
+  y = ROUTE[i - 1][1] + t * (ROUTE[i][1] - ROUTE[i - 1][1]);
+}
+
+float routeDir(float s) {
+  float x0, y0, x1, y1;
+  routeAt(s - 4, x0, y0);
+  routeAt(s + 14, x1, y1);
+  return atan2f(y1 - y0, x1 - x0);
+}
+
+void init() {
+  if (ready) return; // Fahrt läuft über Szenenwechsel hinweg weiter
+  rcum[0] = 0;
+  for (int i = 1; i < NR; i++)
+    rcum[i] = rcum[i - 1] + hypotf(ROUTE[i][0] - ROUTE[i - 1][0], ROUTE[i][1] - ROUTE[i - 1][1]) * UNIT;
+  dist = speed = simT = arriveT = 0;
+  heading = routeDir(0);
+  zoom = 1.1f;
+  ready = true;
+}
+
+// ---- Text mit deutschen Umlauten --------------------------------------------
+// Die GFX-Fonts enthalten nur ASCII: Umlaute werden als Grundbuchstabe mit zwei
+// Punkten gezeichnet, ß als "ss". dots: Bitmaske der Zeichen mit Punkten.
+int mapUtf8(const char *s, char *out, int maxLen, uint32_t &dots) {
+  int n = 0;
+  dots = 0;
+  while (*s && n < maxLen - 2) {
+    uint8_t c = *s++;
+    if (c == 0xC3 && *s) {
+      uint8_t d = *s++;
+      const char *base = nullptr;
+      bool umlaut = true;
+      switch (d) {
+      case 0xA4: base = "a"; break;
+      case 0xB6: base = "o"; break;
+      case 0xBC: base = "u"; break;
+      case 0x84: base = "A"; break;
+      case 0x96: base = "O"; break;
+      case 0x9C: base = "U"; break;
+      case 0x9F: base = "ss", umlaut = false; break;
+      case 0xA9: base = "e", umlaut = false; break;
+      default: base = "?", umlaut = false; break;
+      }
+      if (umlaut && n < 32) dots |= 1u << n;
+      while (*base) out[n++] = *base++;
+    } else if (c < 0x80) {
+      out[n++] = c;
+    }
+  }
+  out[n] = 0;
+  return n;
+}
+
+int16_t textWidth(const GFXfont *f, const char *utf8) {
+  char buf[64];
+  uint32_t dots;
+  mapUtf8(utf8, buf, sizeof(buf), dots);
+  int16_t w = 0;
+  for (const char *p = buf; *p; p++) w += f->glyph[*p - f->first].xAdvance;
+  return w;
+}
+
+// Zeichnet Text mit Grundlinie y; kürzt mit "..." auf maxW Pixel
+void drawText(const GFXfont *f, const char *utf8, int16_t x, int16_t y, uint16_t color, int16_t maxW = 320) {
+  char buf[64];
+  uint32_t dots;
+  int n = mapUtf8(utf8, buf, sizeof(buf), dots);
+  const int16_t ellipsis = 3 * f->glyph['.' - f->first].xAdvance;
+  int16_t w = 0;
+  for (int i = 0; i < n; i++) w += f->glyph[buf[i] - f->first].xAdvance;
+  bool cut = false;
+  while (w > maxW && n > 0) { // so lange kürzen, bis Text plus "..." passt
+    w -= f->glyph[buf[--n] - f->first].xAdvance;
+    cut = true;
+    if (w + ellipsis <= maxW) break;
+  }
+  fb.setFont(f);
+  fb.setTextSize(1);
+  fb.setTextColor(color);
+  fb.setCursor(x, y);
+  const int16_t ds = f->yAdvance > 30 ? 3 : 2; // Punktgröße
+  for (int i = 0; i < n; i++) {
+    int16_t cx = fb.getCursorX();
+    fb.write(buf[i]);
+    if (i < 32 && (dots >> i & 1)) {
+      const GFXglyph &g = f->glyph[buf[i] - f->first];
+      int16_t mid = cx + g.xOffset + g.width / 2, top = y + g.yOffset - ds - 2;
+      int16_t gap = max(1, g.width / 5);
+      fb.fillRect(mid - gap - ds, top, ds, ds, color);
+      fb.fillRect(mid + gap, top, ds, ds, color);
+    }
+  }
+  if (cut) fb.print("...");
+  fb.setFont();
+}
+
+// ---- Zeichenhilfen ----------------------------------------------------------
+static inline bool IRAM_ATTR offScreen(float x0, float y0, float x1, float y1, float m) {
+  return (x0 < -m && x1 < -m) || (x0 > W + m && x1 > W + m) || (y0 < -m && y1 < -m) || (y0 > H + m && y1 > H + m);
+}
+
+void IRAM_ATTR thickLine(float x0, float y0, float x1, float y1, float w, uint16_t c, bool round = true) {
+  if (offScreen(x0, y0, x1, y1, w)) return;
+  if (w < 1.6f) {
+    fb.drawLine(rnd(x0), rnd(y0), rnd(x1), rnd(y1), c);
+    return;
+  }
+  float dx = x1 - x0, dy = y1 - y0, len = hypotf(dx, dy);
+  if (len < 0.01f) return;
+  float nx = -dy / len * w * 0.5f, ny = dx / len * w * 0.5f;
+  int16_t ax = rnd(x0 + nx), ay = rnd(y0 + ny), bx = rnd(x1 + nx), by = rnd(y1 + ny);
+  int16_t cx = rnd(x1 - nx), cy = rnd(y1 - ny), ex = rnd(x0 - nx), ey = rnd(y0 - ny);
+  fb.fillTriangle(ax, ay, bx, by, cx, cy, c);
+  fb.fillTriangle(ax, ay, cx, cy, ex, ey, c);
+  if (round && w >= 3) fb.fillCircle(rnd(x1), rnd(y1), (int16_t)(w * 0.5f - 0.5f), c);
+}
+
+void IRAM_ATTR polyline(uint32_t pt, uint16_t n, float w, uint16_t c) {
+  float px, py;
+  toScreen(PTS[pt][0], PTS[pt][1], px, py);
+  if (w >= 3) fb.fillCircle(rnd(px), rnd(py), (int16_t)(w * 0.5f - 0.5f), c);
+  for (uint16_t i = 1; i < n; i++) {
+    float x, y;
+    toScreen(PTS[pt + i][0], PTS[pt + i][1], x, y);
+    thickLine(px, py, x, y, w, c);
+    px = x, py = y;
+  }
+}
+
+// Fläche mit beliebig vielen Teilstücken füllen (Gerade-Ungerade-Regel: die
+// Kanten müssen nur vollständig sein, nicht zu Ringen sortiert; Inseln bleiben frei)
+const int MAX_EDGES = 256; // größte Fläche der Karte: 120 Punkte
+// Kante: y in Viertelpixeln, x als Startwert plus Steigung (eine Division je
+// Kante statt je Zeile; der ESP32 dividiert float in Software)
+struct Edge {
+  int16_t ya, yb; // ya < yb
+  float xa, slope; // x bei ya (Pixel), dx/dy (Pixel je Viertelpixel)
+};
+Edge edges[MAX_EDGES];
+static inline int16_t IRAM_ATTR q4(float v) {
+  v = v < -8000 ? -8000 : v > 8000 ? 8000 : v;
+  return rnd(v * 4);
+}
+
+#if FB_BITS == 8
+inline uint8_t pixVal(uint16_t c) { return ILI9341_Framebuffer8::color332(c); }
+#else
+inline uint16_t pixVal(uint16_t c) { return c; }
+#endif
+
+void IRAM_ATTR fillArea(const Area &a, uint16_t c) {
+  const auto pc = pixVal(c);
+  int ne = 0;
+  float ymin = 1e9f, ymax = -1e9f;
+  for (uint16_t p = 0; p < a.nparts && ne < MAX_EDGES; p++) {
+    const Part &part = PARTS[a.part + p];
+    float px, py;
+    toScreen(PTS[part.pt][0], PTS[part.pt][1], px, py);
+    for (uint16_t i = 1; i <= part.n && ne < MAX_EDGES; i++) {
+      // Einzelne Wege (Gebäude) sind geschlossen; Teilstücke von Multipolygonen
+      // schließen sich über die anderen Teilstücke, daher kein Rücksprung
+      if (i == part.n && a.nparts > 1) break;
+      uint32_t q = part.pt + (i % part.n);
+      float x, y;
+      toScreen(PTS[q][0], PTS[q][1], x, y);
+      int16_t qa = q4(py), qb = q4(y);
+      if (qa != qb) {
+        Edge &e = edges[ne++];
+        if (qa < qb) e.ya = qa, e.yb = qb, e.xa = px;
+        else e.ya = qb, e.yb = qa, e.xa = x;
+        e.slope = (qa < qb ? x - px : px - x) / (float)(e.yb - e.ya);
+      }
+      ymin = min(ymin, y), ymax = max(ymax, y);
+      px = x, py = y;
+    }
+  }
+  if (ymax < 0 || ymin > H) return;
+  int y0 = max(0, rnd(ymin)), y1 = min(H - 1, rnd(ymax) - 1); // Pixelmitten innerhalb [ymin, ymax]
+  static float xs[64];
+  for (int y = y0; y <= y1; y++) {
+    const int yc = y * 4 + 2; // Zeilenmitte in Viertelpixeln
+    int n = 0;
+    for (int i = 0; i < ne && n < 64; i++) {
+      const Edge &e = edges[i];
+      if (e.ya <= yc && yc < e.yb) {
+        float x = e.xa + (yc - e.ya) * e.slope;
+        int j = n++;
+        while (j > 0 && xs[j - 1] > x) xs[j] = xs[j - 1], j--;
+        xs[j] = x;
+      }
+    }
+    for (int i = 0; i + 1 < n; i += 2) {
+      int xa = max(0, rnd(xs[i])), xb = min(W - 1, rnd(xs[i + 1]) - 1);
+      if (xb >= xa) {
+        auto *row = fb.getRow(y) + xa; // direkt in die Pufferzeile (getRow markiert sie als geändert)
+        for (int x = xa; x <= xb; x++) *row++ = pc;
+      }
+    }
+  }
+}
+
+// ---- Abbiegesymbole (weiß, Mittelpunkt cx, cy) -------------------------------
+void arrowHead(float x, float y, float dx, float dy, uint16_t c) {
+  fb.fillTriangle(lroundf(x + dx * 10), lroundf(y + dy * 10), lroundf(x - dy * 9), lroundf(y + dx * 9),
+                  lroundf(x + dy * 9), lroundf(y - dx * 9), c);
+}
+
+void drawManeuverIcon(const Maneuver &m, int cx, int cy, uint16_t c) {
+  const float w = 6;
+  if (m.kind == M_ARRIVE) { // Zielflagge
+    fb.fillRect(cx - 9, cy - 16, 3, 32, c);
+    for (int r = 0; r < 4; r++)
+      for (int q = 0; q < 4; q++)
+        if ((r + q) & 1) fb.fillRect(cx - 6 + q * 5, cy - 16 + r * 5, 5, 5, c);
+    fb.drawRect(cx - 6, cy - 16, 20, 20, c);
+    return;
+  }
+  float a = m.angle * DEG_TO_RAD, dx = sinf(a), dy = -cosf(a);
+  if (m.kind == M_ROUNDABOUT) {
+    for (int r = 8; r <= 11; r++) fb.drawCircle(cx, cy - 2, r, c);
+    thickLine(cx, cy + 20, cx, cy + 9, w, c, false);
+    float sx = cx + dx * 10, sy = cy - 2 + dy * 10;
+    thickLine(sx, sy, sx + dx * 8, sy + dy * 8, w, c, false);
+    arrowHead(sx + dx * 8, sy + dy * 8, dx, dy, c);
+    return;
+  }
+  if (m.angle == 180) { // Wenden
+    thickLine(cx + 7, cy + 20, cx + 7, cy - 6, w, c, false);
+    for (int i = 0; i < 8; i++) {
+      float t0 = PI * i / 8, t1 = PI * (i + 1) / 8;
+      thickLine(cx + 7 * cosf(t0), cy - 6 - 7 * sinf(t0), cx + 7 * cosf(t1), cy - 6 - 7 * sinf(t1), w, c);
+    }
+    thickLine(cx - 7, cy - 6, cx - 7, cy + 2, w, c, false);
+    arrowHead(cx - 7, cy + 2, 0, 1, c);
+    return;
+  }
+  thickLine(cx, cy + 20, cx, cy, w, c, true);
+  thickLine(cx, cy, cx + dx * 12, cy + dy * 12, w, c, false);
+  arrowHead(cx + dx * 12, cy + dy * 12, dx, dy, c);
+}
+
+// ---- Simulation -------------------------------------------------------------
+int nextManeuver() {
+  for (int i = 0; i < NM; i++)
+    if (MANEUVERS[i].s > dist + 1) return i;
+  return NM - 1;
+}
+
+void simulate(float dt) {
+  float L = rcum[NR - 1];
+  if (dist >= L - 0.5f) { // angekommen: kurz stehen, dann von vorn
+    speed = 0;
+    arriveT += dt;
+    if (arriveT > 4) {
+      dist = arriveT = 0;
+      heading = routeDir(0);
+    }
+    return;
+  }
+  dt *= TIME_SCALE;
+  simT += dt;
+  // Zielgeschwindigkeit: vor Abbiegungen so bremsen, dass man mit Kurventempo ankommt
+  float target = V_MAX;
+  for (int i = 0; i < NM; i++) {
+    const Maneuver &m = MANEUVERS[i];
+    float ahead = m.s - dist;
+    if (ahead < 0 || ahead > 200) continue;
+    float vTurn = m.kind == M_ARRIVE ? 0 : m.kind == M_ROUNDABOUT ? 6 : abs(m.angle) >= 60 ? 5 : 9;
+    target = min(target, sqrtf(vTurn * vTurn + 2 * 2.0f * max(0.0f, ahead - 3)));
+  }
+  speed += constrain(target - speed, -3.0f * dt, 1.8f * dt);
+  dist = min(L, dist + speed * dt);
+  // Blickrichtung weich nachführen
+  float diff = routeDir(dist) - heading;
+  while (diff > PI) diff -= 2 * PI;
+  while (diff < -PI) diff += 2 * PI;
+  heading += diff * min(1.0f, dt * 2.5f);
+  float zTarget = 1.25f - 0.45f * speed / V_MAX; // schneller = weiter herausgezoomt
+  zoom += (zTarget - zoom) * min(1.0f, dt * 1.5f);
+}
+
+// ---- Bild -------------------------------------------------------------------
+void frame(float dt) {
+  init();
+  simulate(dt);
+
+  routeAt(dist, camX, camY);
+  float rot = -HALF_PI - heading; // Fahrtrichtung zeigt nach oben
+  rc = cosf(rot), rs = sinf(rot);
+  k = zoom * UNIT; // Pixel pro Karteneinheit
+  const float R = 260 / k; // Sichtradius in Karteneinheiten (um das Auto)
+  auto visible = [&](int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+    return x1 >= camX - R && x0 <= camX + R && y1 >= camY - R && y0 <= camY + R;
+  };
+  const float m = zoom; // Pixel pro Meter
+
+  fb.fillScreen(rgb(32, 36, 44));
+  // Kandidaten aus den Rasterzellen um das Auto (plus große Objekte in Eintrag 0)
+  const int gx0 = max(0, (int)((camX - R - GRID_X0) / CELL)), gx1 = min(GX - 1, (int)((camX + R - GRID_X0) / CELL));
+  const int gy0 = max(0, (int)((camY - R - GRID_Y0) / CELL)), gy1 = min(GY - 1, (int)((camY + R - GRID_Y0) / CELL));
+  uint16_t candA[600], candL[600];
+  int nCA = 0, nCL = 0;
+  auto collect = [&](int cell) {
+    for (int i = CELL_AREAS[cell]; i < CELL_AREAS[cell + 1] && nCA < 600; i++)
+      if (visible(AREAS[i].x0, AREAS[i].y0, AREAS[i].x1, AREAS[i].y1)) candA[nCA++] = i;
+    for (int i = CELL_LINES[cell]; i < CELL_LINES[cell + 1] && nCL < 600; i++)
+      if (visible(LINES[i].x0, LINES[i].y0, LINES[i].x1, LINES[i].y1)) candL[nCL++] = i;
+  };
+  collect(0);
+  for (int cy = gy0; cy <= gy1; cy++)
+    for (int cx = gx0; cx <= gx1; cx++) collect(1 + cy * GX + cx);
+
+  const uint16_t areaCol[] = {rgb(36, 62, 46), rgb(38, 76, 122), rgb(54, 58, 70)};
+  for (int cls = 0; cls < 3; cls++) // Parks, Wasser, Gebäude
+    for (int i = 0; i < nCA; i++)
+      if (AREAS[candA[i]].cls == cls) fillArea(AREAS[candA[i]], areaCol[cls]);
+
+  // Linien in der Reihenfolge der Klassen (Bahn, Fluss, Fußgänger ... Hauptstraßen)
+  const uint16_t lineCol[] = {rgb(96, 96, 108), rgb(38, 76, 122), rgb(70, 74, 86), rgb(92, 96, 110),
+                              rgb(120, 124, 138), rgb(214, 172, 84), rgb(236, 150, 70)};
+  const float lineW[] = {1, 14 * m, 2.5f * m, 6 * m, 8 * m, 10 * m, 12 * m};
+  for (int cls = 0; cls < 7; cls++)
+    for (int i = 0; i < nCL; i++) {
+      const Line &l = LINES[candL[i]];
+      if (l.cls == cls) polyline(l.pt, l.n, max(1.0f, lineW[cls]), lineCol[cls]);
+    }
+
+  // Restliche Route: dunkler Rand, helle Mitte
+  int i0 = 1;
+  while (i0 < NR - 1 && rcum[i0] <= dist) i0++;
+  for (int pass = 0; pass < 2; pass++) {
+    float w = pass ? 9 * m + 2 : 9 * m + 6;
+    uint16_t c = pass ? rgb(70, 160, 255) : rgb(20, 70, 170);
+    float px = CAR_X, py = CAR_Y;
+    for (int i = i0; i < NR; i++) {
+      float x, y;
+      toScreen(ROUTE[i][0], ROUTE[i][1], x, y);
+      thickLine(px, py, x, y, w, c);
+      px = x, py = y;
+    }
+  }
+  // Ziel-Markierung
+  float zx, zy;
+  toScreen(ROUTE[NR - 1][0], ROUTE[NR - 1][1], zx, zy);
+  if (zx > -20 && zx < W + 20 && zy > -20 && zy < H + 20) {
+    fb.fillCircle(zx, zy - 14, 8, rgb(230, 60, 60));
+    fb.fillTriangle(zx - 7, zy - 10, zx + 7, zy - 10, zx, zy, rgb(230, 60, 60));
+    fb.fillCircle(zx, zy - 14, 3, ILI9341_WHITE);
+  }
+
+  // Auto: Pfeil mit weißem Rand
+  const int16_t cx = CAR_X, cy = CAR_Y;
+  fb.fillTriangle(cx, cy - 16, cx + 12, cy + 12, cx, cy + 6, ILI9341_WHITE);
+  fb.fillTriangle(cx, cy - 16, cx, cy + 6, cx - 12, cy + 12, ILI9341_WHITE);
+  fb.fillTriangle(cx, cy - 11, cx + 8, cy + 8, cx, cy + 3, rgb(40, 120, 255));
+  fb.fillTriangle(cx, cy - 11, cx, cy + 3, cx - 8, cy + 8, rgb(40, 120, 255));
+
+  // Abbiegehinweis oben
+  const uint16_t panel = rgb(18, 104, 70), white = ILI9341_WHITE;
+  fb.fillRect(0, 0, W, 58, panel);
+  const Maneuver &mv = MANEUVERS[nextManeuver()];
+  char buf[48];
+  if (arriveT > 0) {
+    drawManeuverIcon(mv, 30, 34, white);
+    drawText(&FreeSansBold12pt7b, "Ziel erreicht", 62, 28, white);
+    drawText(&FreeSans9pt7b, NAMES[mv.name], 62, 49, white, W - 68);
+  } else {
+    float ahead = mv.s - dist;
+    drawManeuverIcon(mv, 30, 34, white);
+    if (ahead < 15) snprintf(buf, sizeof(buf), "Jetzt");
+    else if (ahead >= 1000) snprintf(buf, sizeof(buf), "%d,%d km", (int)(ahead / 1000), (int)(ahead / 100) % 10);
+    else if (ahead >= 100) snprintf(buf, sizeof(buf), "%d m", (int)(ahead / 50 + 0.5f) * 50);
+    else snprintf(buf, sizeof(buf), "%d m", (int)(ahead / 10 + 0.5f) * 10);
+    drawText(&FreeSansBold18pt7b, buf, 62, 34, white);
+    if (mv.kind == M_ROUNDABOUT) {
+      snprintf(buf, sizeof(buf), "%u. Ausfahrt", mv.exit);
+      drawText(&FreeSans9pt7b, buf, W - 6 - textWidth(&FreeSans9pt7b, buf), 22, rgb(200, 240, 215));
+    }
+    drawText(&FreeSans9pt7b, NAMES[mv.name], 62, 52, white, W - 68);
+  }
+
+  // Aktuelle Straße unter dem Auto
+  int si = 0;
+  while (si + 1 < NS && STREETS[si + 1].s <= dist) si++;
+  const char *street = NAMES[STREETS[si].name];
+  if (*street) {
+    int16_t tw = min<int16_t>(textWidth(&FreeSans9pt7b, street), 280);
+    fb.fillRoundRect(160 - tw / 2 - 8, 178, tw + 16, 20, 6, rgb(20, 24, 30));
+    drawText(&FreeSans9pt7b, street, 160 - tw / 2, 193, white, 280);
+  }
+
+  // Statusleiste unten: Ankunft, Restweg, Tempo
+  fb.fillRect(0, H - 28, W, 28, rgb(20, 24, 30));
+  fb.drawFastHLine(0, H - 28, W, rgb(60, 66, 78));
+  float rest = rcum[NR - 1] - dist;
+  uint32_t nowMin = 15 * 60 + 25 + (uint32_t)(simT / 60);
+  uint32_t eta = nowMin + (uint32_t)(rest / 8.0f / 60 + 1); // ~30 km/h im Stadtverkehr
+  snprintf(buf, sizeof(buf), "%02lu:%02lu", (eta / 60) % 24, eta % 60);
+  drawText(&FreeSansBold9pt7b, buf, 8, H - 9, white);
+  drawText(&FreeSans9pt7b, "Ankunft", 62, H - 9, rgb(150, 156, 170));
+  snprintf(buf, sizeof(buf), "%d,%d km", (int)(rest / 1000), (int)(rest / 100) % 10);
+  drawText(&FreeSansBold9pt7b, buf, 150, H - 9, white);
+  snprintf(buf, sizeof(buf), "%d km/h", (int)(speed * 3.6f + 0.5f));
+  drawText(&FreeSansBold9pt7b, buf, W - 8 - textWidth(&FreeSansBold9pt7b, buf), H - 9, white);
+
+  // Quellenangabe (ODbL)
+  fb.setFont();
+  fb.setTextColor(rgb(120, 126, 140));
+  fb.setCursor(W - 128, H - 38);
+  fb.print("(c) OpenStreetMap");
+}
+} // namespace nav
+
+// ===========================================================================
 // Szenensteuerung
 // ===========================================================================
-enum Scene { PLASMA, SYNTH, FIREWORKS, DASH, CHART, NUM_SCENES };
-const char *sceneNames[] = {"Plasma", "Synthwave", "Feuerwerk", "Bordcomputer", "Diagramm"};
-const uint32_t sceneMs[] = {12000, 12000, 12000, 20000, 15000};
+enum Scene { PLASMA, SYNTH, FIREWORKS, DASH, CHART, NAV, NUM_SCENES };
+const char *sceneNames[] = {"Plasma", "Synthwave", "Feuerwerk", "Bordcomputer", "Diagramm", "Navigation"};
+const uint32_t sceneMs[] = {12000, 12000, 12000, 20000, 15000, 30000};
 
 uint8_t scene = PLASMA;
 uint32_t sceneStart = 0;
@@ -559,6 +1012,7 @@ void startScene(uint8_t s) {
   if (scene == FIREWORKS) fireworks::init();
   if (scene == DASH) dash::init();
   if (scene == CHART) chart::init();
+  if (scene == NAV) nav::init();
 }
 
 void setup() {
@@ -588,7 +1042,7 @@ void setup() {
 
 // ===========================================================================
 // Serielle Schnittstelle (921600 Baud, Befehle mit Zeilenende):
-//   s<n>   Szene n festhalten (0=Plasma, 1=Synthwave, 2=Feuerwerk, 3=Bordcomputer, 4=Diagramm)
+//   s<n>   Szene n festhalten (0=Plasma, 1=Synthwave, 2=Feuerwerk, 3=Bordcomputer, 4=Diagramm, 5=Navigation)
 //   a      automatischer Szenenwechsel
 //   f<MHz> SPI-Takt setzen, z.B. f80
 //   b      Benchmark der Einzelschritte
@@ -653,6 +1107,7 @@ void renderScene(uint32_t now, float dt) {
   case FIREWORKS: fireworks::frame(dt); break;
   case DASH:      dash::frame(dt); break;
   case CHART:     chart::frame(); break;
+  case NAV:       nav::frame(dt); break;
   }
   if (sceneMs < 2000 && scene != CHART) drawTitle(sceneNames[scene]); // Titel würde mitscrollen
   drawHud();

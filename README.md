@@ -2,9 +2,9 @@
 
 A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** display class. It includes a framebuffer for flicker-free, high-frame-rate animation.
 
-| Plasma | Synthwave | Fireworks | Chart | Trip computer |
-|---|---|---|---|---|
-| ![Plasma](extras/docs/screenshots/plasma.png) | ![Synthwave](extras/docs/screenshots/synthwave.png) | ![Fireworks](extras/docs/screenshots/feuerwerk.png) | ![Chart](extras/docs/screenshots/diagramm.png) | ![Trip computer](extras/docs/screenshots/bordcomputer.png) |
+| Plasma | Synthwave | Fireworks | Chart | Navigation | Trip computer |
+|---|---|---|---|---|---|
+| ![Plasma](extras/docs/screenshots/plasma.png) | ![Synthwave](extras/docs/screenshots/synthwave.png) | ![Fireworks](extras/docs/screenshots/feuerwerk.png) | ![Chart](extras/docs/screenshots/diagramm.png) | ![Navigation](extras/docs/screenshots/navigation.png) | ![Trip computer](extras/docs/screenshots/bordcomputer.png) |
 
 *These are real screenshots, read back from the display's RAM over SPI.*
 
@@ -347,10 +347,11 @@ src/                    the library: driver and framebuffer
 examples/               Arduino examples
 library.properties      Arduino Library Manager metadata
 library.json            PlatformIO registry metadata
-extras/demo/            demo firmware: 5 scenes, serial measurement interface
+extras/demo/            demo firmware: 6 scenes, serial measurement interface
 extras/bench/           benchmark against other libraries
 extras/tools/tftctl.py  control the demo, read fps/verification, save screenshots as PNG
 extras/tools/benchrun.py  flash all benchmark firmwares and print a comparison table
+extras/tools/mapgen.py  generate the map data for the navigation scene (OpenStreetMap + OSRM)
 extras/test/host/       host tests: pixel-identical to Adafruit_GFX
 extras/docs/            images for this README
 ```
@@ -375,7 +376,11 @@ python3 extras/tools/tftctl.py t T20 D V10 -t 10  # on-board checks
 
 ## Demo firmware and serial interface
 
-The demo cycles through five scenes and prints a status line every second:
+The demo cycles through six scenes and prints a status line every second.
+
+The navigation scene drives a real route through Hannover, from Steintor to the HDI Arena. The map is OpenStreetMap data (streets, buildings, water, parks), and the turn-by-turn instructions come from the OSRM router. `extras/tools/mapgen.py` downloads and simplifies both into `extras/demo/nav_map.h`, about 180 KB in flash, sorted into a 128 m grid. The map rotates with the driving direction and is redrawn completely every frame, at about 30 fps with VSync.
+
+Status line:
 
 ```
 STAT scene=Synthwave fps=92 render_us=... display_us=... px=... spi_mhz=40 heap=... vsync=1 late=0
@@ -385,7 +390,7 @@ Commands (each followed by a newline):
 
 | Command | Action |
 |---|---|
-| `s<n>` / `a` | Hold scene n (0 Plasma, 1 Synthwave, 2 Fireworks, 3 Trip computer, 4 Chart), or cycle automatically |
+| `s<n>` / `a` | Hold scene n (0 Plasma, 1 Synthwave, 2 Fireworks, 3 Trip computer, 4 Chart, 5 Navigation), or cycle automatically |
 | `y1` / `y0` | VSync on / off |
 | `f<MHz>` | Set SPI clock |
 | `o<n>` | Rotation of the current scene |
@@ -413,4 +418,4 @@ python3 extras/tools/tftctl.py --listen shots/    # Enter or BOOT button = scree
 
 ## License
 
-[MIT](LICENSE). The library uses the [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) (BSD license) as a dependency, including its built-in 5×7 font.
+[MIT](LICENSE). The map data of the navigation demo (`extras/demo/nav_map.h`) is © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), licensed under the ODbL. The library uses the [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) (BSD license) as a dependency, including its built-in 5×7 font.
