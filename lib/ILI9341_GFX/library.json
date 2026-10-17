@@ -1,0 +1,22 @@
+{
+  "name": "ILI9341_GFX",
+  "version": "1.0.0",
+  "description": "Schneller ILI9341-SPI-Treiber für ESP32, kompatibel zu Adafruit_GFX: eigener Register-/DMA-Treiber, Hardware-DC im Dual-Modus, Framebuffer mit Dirty-Rects, VSync und Hardware-Scrolling",
+  "keywords": "ili9341, tft, display, adafruit_gfx, spi, dma, esp32, framebuffer",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "dependencies": [
+    {
+      "name": "Adafruit GFX Library",
+      "owner": "adafruit",
+      "version": "^1.11.9"
+    }
+  ],
+  "headers": [
+    "ILI9341_GFX.h",
+    "ILI9341_Framebuffer.h"
+  ],
+  "examples": [
+    "examples/*/*.ino"
+  ]
+}
