@@ -180,16 +180,14 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 ### Installation
 
 - **Arduino IDE:** Install `ILI9341_GFX` through the Library Manager. *Adafruit GFX Library* is installed with it. Until the library appears in the Library Manager, download the repository as ZIP and use *Sketch → Include Library → Add .ZIP Library*.
-- **PlatformIO:** Add the library to `platformio.ini`:
+- **PlatformIO:** Add the library from the [PlatformIO registry](https://registry.platformio.org/libraries/jkbusse/ILI9341_GFX) to `platformio.ini`:
 
   ```ini
   [env:esp32]
   platform = espressif32
   board = nodemcu-32s
   framework = arduino
-  lib_deps = JKBusse/ILI9341_GFX
-  ; until the library appears in the PlatformIO registry:
-  ; lib_deps = https://github.com/JKBusse/ILI9341_GFX.git
+  lib_deps = jkbusse/ILI9341_GFX
   build_unflags = -Os
   build_flags = -O2
   ```
