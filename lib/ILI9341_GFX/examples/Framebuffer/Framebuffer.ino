@@ -1,10 +1,10 @@
-// ILI9341_GFX – flackerfreie Animation mit Framebuffer.
+// ILI9341_GFX: flicker-free animation with the framebuffer.
 //
-// Gezeichnet wird ins RAM (150 KB bei 16 Bit), display() überträgt nur die
-// geänderten Bereiche per DMA. Mit VSync wird hinter dem Bildaufbau des
-// Panels geschrieben: kein Tearing.
+// Everything is drawn into RAM (150 KB at 16 bit); display() sends only the
+// changed regions via DMA. With VSync the transfer follows the panel's
+// refresh, so there is no tearing.
 //
-// Verdrahtung (ESP32, VSPI): SCK 18, MOSI 23, MISO 19, CS 15, DC 2, RST 4, LED 13
+// Wiring (ESP32, VSPI): SCK 18, MOSI 23, MISO 19, CS 15, DC 2, RST 4, LED 13
 
 #include <ILI9341_GFX.h>
 #include <ILI9341_Framebuffer.h>
@@ -15,7 +15,7 @@
 #define TFT_BL  13
 
 ILI9341_GFX tft(TFT_CS, TFT_DC, TFT_RST);
-ILI9341_Framebuffer fb(tft); // ILI9341_Framebuffer8 braucht nur die Hälfte (RGB332/Palette)
+ILI9341_Framebuffer fb(tft); // ILI9341_Framebuffer8 needs half the RAM (RGB332/palette)
 
 struct Ball {
   float x, y, vx, vy;
@@ -30,11 +30,11 @@ void setup() {
   digitalWrite(TFT_BL, HIGH);
   tft.begin();
   if (!fb.begin()) {
-    Serial.println("Nicht genug RAM für den Framebuffer");
+    Serial.println("Not enough RAM for the framebuffer");
     while (true) delay(1000);
   }
   fb.setRotation(1);
-  fb.setVSync(true); // braucht MISO (liest die Scanline des Panels)
+  fb.setVSync(true); // needs MISO (reads the panel's scanline)
 
   for (Ball &b : balls) {
     b.r = random(6, 20);
@@ -60,7 +60,7 @@ void loop() {
   fb.setCursor(4, 4);
   fb.setTextColor(ILI9341_WHITE);
   fb.printf("%lu fps", (unsigned long)fps);
-  fb.display(); // nur Geändertes übertragen
+  fb.display(); // send only what changed
 
   frames++;
   if (millis() - t0 >= 1000) {

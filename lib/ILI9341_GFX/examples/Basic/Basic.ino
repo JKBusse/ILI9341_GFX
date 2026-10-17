@@ -1,7 +1,7 @@
-// ILI9341_GFX – Grundlagen: direkt auf das Display zeichnen.
-// Alle Funktionen von Adafruit_GFX stehen zur Verfügung.
+// ILI9341_GFX basics: drawing directly on the display.
+// All Adafruit_GFX functions are available.
 //
-// Verdrahtung (ESP32, VSPI): SCK 18, MOSI 23, MISO 19, CS 15, DC 2, RST 4, LED 13
+// Wiring (ESP32, VSPI): SCK 18, MOSI 23, MISO 19, CS 15, DC 2, RST 4, LED 13
 
 #include <ILI9341_GFX.h>
 #include <Fonts/FreeSansBold12pt7b.h>
@@ -9,7 +9,7 @@
 #define TFT_CS  15
 #define TFT_DC  2
 #define TFT_RST 4
-#define TFT_BL  13 // Hintergrundbeleuchtung (-1, wenn fest verdrahtet)
+#define TFT_BL  13 // backlight (-1 if hard-wired)
 
 ILI9341_GFX tft(TFT_CS, TFT_DC, TFT_RST);
 
@@ -36,7 +36,7 @@ void setup() {
 }
 
 void loop() {
-  // Zähler mit Hintergrundfarbe: überschreibt die alte Zahl ohne Flackern
+  // Text with a background color overwrites the old number without flicker
   static uint32_t n = 0;
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_GREEN, ILI9341_NAVY);

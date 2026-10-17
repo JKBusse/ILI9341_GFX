@@ -1,12 +1,12 @@
-# ILI9341_GFX (Bibliothek)
+# ILI9341_GFX (library)
 
-Schneller ILI9341-SPI-Treiber für den ESP32, kompatibel zu Adafruit_GFX, mit Framebuffer, VSync und Hardware-Scrolling.
+A fast ILI9341 SPI driver for the classic ESP32. It is compatible with Adafruit_GFX and comes with a framebuffer, tear-free VSync and hardware scrolling.
 
-- `ILI9341_GFX.h`: Treiber, zeichnet direkt aufs Display.
-- `ILI9341_Framebuffer.h`: Framebuffer mit Dirty-Rect-Übertragung. `ILI9341_Framebuffer` arbeitet mit 16 Bit, `ILI9341_Framebuffer8` mit RGB332 oder Palette.
-- `examples/Basic`: direktes Zeichnen.
-- `examples/Framebuffer`: flackerfreie Animation mit VSync.
+- `ILI9341_GFX.h`: the display driver, which draws directly on the display.
+- `ILI9341_Framebuffer.h`: a framebuffer with dirty-region updates. `ILI9341_Framebuffer` is 16 bit, `ILI9341_Framebuffer8` stores RGB332 or palette indexes.
+- `examples/Basic`: direct drawing.
+- `examples/Framebuffer`: flicker-free animation with VSync.
 
-Abhängigkeit: [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) ≥ 1.11.9.
+Dependency: [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) ≥ 1.11.9.
 
-Dokumentation, Verdrahtung, API und Benchmarks stehen im [README des Projekts](../../README.md).
+The [project README](../../README.md) covers features, hardware requirements, the API, benchmarks and a comparison with other libraries.
