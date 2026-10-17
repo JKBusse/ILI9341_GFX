@@ -1,0 +1,165 @@
+{
+ "bench_ours": {
+  "tests": {
+   "FillScreen": 154200,
+   "Text": 6782,
+   "Lines": 200775,
+   "HV-Lines": 13154,
+   "Rects": 8599,
+   "FilledRects": 317332,
+   "FilledCircles": 40858,
+   "Circles": 19781,
+   "Triangles": 11990,
+   "FilledTriangles": 112303,
+   "RoundRects": 12877,
+   "FilledRoundRects": 324902,
+   "PushImage320x240": 30907
+  },
+  "anim": {
+   "Vollbild": {
+    "fps": 71.0,
+    "info": "Framebuffer_16bit_Diff"
+   },
+   "Ball": {
+    "fps": 1635.2,
+    "info": "Framebuffer_16bit_Diff"
+   },
+   "Vollbild_VSync": {
+    "fps": 81.5,
+    "info": "Framebuffer_16bit_Diff_VSync"
+   },
+   "Ball_VSync": {
+    "fps": 327.1,
+    "info": "Framebuffer_16bit_Diff_VSync"
+   }
+  },
+  "heap": {
+   "free": 91152,
+   "maxblk": 12788
+  }
+ },
+ "bench_adafruit": {
+  "tests": {
+   "FillScreen": 184897,
+   "Text": 25876,
+   "Lines": 1019718,
+   "HV-Lines": 16960,
+   "Rects": 11189,
+   "FilledRects": 379358,
+   "FilledCircles": 70346,
+   "Circles": 114637,
+   "Triangles": 56929,
+   "FilledTriangles": 144331,
+   "RoundRects": 46818,
+   "FilledRoundRects": 390715,
+   "PushImage320x240": 36100
+  },
+  "anim": {
+   "Vollbild": {
+    "fps": 0.0,
+    "info": "GFXcanvas16_320x240:kein_RAM"
+   },
+   "Ball": {
+    "fps": 0.0,
+    "info": "GFXcanvas16_320x240:kein_RAM"
+   }
+  },
+  "heap": {
+   "free": 325232,
+   "maxblk": 110580
+  }
+ },
+ "bench_tftespi": {
+  "tests": {
+   "FillScreen": 156046,
+   "Text": 13278,
+   "Lines": 268572,
+   "HV-Lines": 14402,
+   "Rects": 8940,
+   "FilledRects": 320151,
+   "FilledCircles": 47001,
+   "Circles": 26454,
+   "Triangles": 16790,
+   "FilledTriangles": 112574,
+   "RoundRects": 16725,
+   "FilledRoundRects": 326868,
+   "PushImage320x240": 33437
+  },
+  "anim": {
+   "Vollbild": {
+    "fps": 25.5,
+    "info": "Sprite_8bit"
+   },
+   "Ball": {
+    "fps": 25.9,
+    "info": "Sprite_8bit"
+   }
+  },
+  "heap": {
+   "free": 247368,
+   "maxblk": 110580
+  }
+ },
+ "bench_lovyan": {
+  "tests": {
+   "FillScreen": 154205,
+   "Text": 9321,
+   "Lines": 274020,
+   "HV-Lines": 13899,
+   "Rects": 8653,
+   "FilledRects": 316602,
+   "FilledCircles": 44304,
+   "Circles": 26505,
+   "Triangles": 16429,
+   "FilledTriangles": 108588,
+   "RoundRects": 13344,
+   "FilledRoundRects": 322613,
+   "PushImage320x240": 31296
+  },
+  "anim": {
+   "Vollbild": {
+    "fps": 31.4,
+    "info": "Sprite_8bit"
+   },
+   "Ball": {
+    "fps": 32.1,
+    "info": "Sprite_8bit"
+   }
+  },
+  "heap": {
+   "free": 239040,
+   "maxblk": 110580
+  }
+ },
+ "bench_arduinogfx": {
+  "tests": {
+   "FillScreen": 170351,
+   "Text": 16887,
+   "Lines": 413354,
+   "HV-Lines": 14892,
+   "Rects": 9644,
+   "FilledRects": 349573,
+   "FilledCircles": 52219,
+   "Circles": 40746,
+   "Triangles": 23686,
+   "FilledTriangles": 124430,
+   "RoundRects": 21488,
+   "FilledRoundRects": 362312,
+   "PushImage320x240": 34799
+  },
+  "anim": {
+   "Vollbild": {
+    "fps": 0.0,
+    "info": "Canvas_320x240:kein_RAM"
+   },
+   "Ball": {
+    "fps": 0.0,
+    "info": "Canvas_320x240:kein_RAM"
+   }
+  },
+  "heap": {
+   "free": 323220,
+   "maxblk": 110580
+  }
+ }
+}
