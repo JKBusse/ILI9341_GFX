@@ -6,7 +6,7 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
 
 | Plasma | Synthwave | Fireworks | Chart | Navigation | Trip computer |
 |---|---|---|---|---|---|
-| ![Plasma](extras/docs/screenshots/plasma.png) | ![Synthwave](extras/docs/screenshots/synthwave.png) | ![Fireworks](extras/docs/screenshots/feuerwerk.png) | ![Chart](extras/docs/screenshots/diagramm.png) | ![Navigation](extras/docs/screenshots/navigation.png) | ![Trip computer](extras/docs/screenshots/bordcomputer.png) |
+| ![Plasma](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/plasma.png) | ![Synthwave](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/synthwave.png) | ![Fireworks](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/feuerwerk.png) | ![Chart](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/diagramm.png) | ![Navigation](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/navigation.png) | ![Trip computer](https://raw.githubusercontent.com/JKBusse/ILI9341_GFX/main/extras/docs/screenshots/bordcomputer.png) |
 
 *These are real screenshots, read back from the display's RAM over SPI.*
 
@@ -26,8 +26,8 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
 ## Highlights
 
 - **Fastest in 11 of 13 benchmark tests.** It beats TFT_eSPI, LovyanGFX, Arduino_GFX and Adafruit_ILI9341, with lines 25 % faster and text 27 % faster than the next best. See the [benchmark](#performance).
-- **Hardware D/C switching.** The ESP32's SPI unit runs in dual-output mode, and its second data line is routed through the GPIO matrix to the D/C pin. A whole draw operation (window, command and pixels) goes out as **one** SPI transfer instead of six. This needs no extra wiring.
-- **Adafruit_GFX compatible.** The class derives from `Adafruit_GFX`, so existing Adafruit code and fonts work unchanged. The accelerated primitives draw **pixel-identically** to Adafruit_GFX, verified by about 1500 automated test cases.
+- **Hardware D/C switching.** The ESP32's SPI unit runs in dual-output mode, and its second data line is routed through the GPIO matrix to the D/C pin. A whole draw operation (window, command and pixels) goes out as one SPI transfer instead of six. This needs no extra wiring.
+- **Adafruit_GFX compatible.** The class derives from `Adafruit_GFX`, so existing Adafruit code and fonts work unchanged. The accelerated primitives draw pixel-identically to Adafruit_GFX, verified by about 1500 automated test cases.
 - **Framebuffer with dirty-region tracking.** You redraw the whole frame and `display()` sends only what actually changed, using DMA, while the CPU renders the next frame.
 - **Tear-free VSync.** The driver reads the panel's scanline and writes behind the refresh beam.
 
@@ -72,7 +72,7 @@ A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** d
 - **Two formats:**
   - 16 bit RGB565 (150 KB).
   - 8 bit (75 KB), stored as RGB332 or as indexes into a custom 256-color palette (palette cycling without redrawing).
-- **Allocation:** The buffer is allocated in chunks, so it fits into the fragmented ESP32 heap **without PSRAM**.
+- **Allocation:** The buffer is allocated in chunks, so it fits into the fragmented ESP32 heap without PSRAM.
 - **Change detection:**
   - The buffer keeps a hash per 32-pixel row segment.
   - Only segments that were drawn into are re-hashed.
@@ -115,7 +115,7 @@ All five libraries ran the same tests on the same hardware: NodeMCU-32S with an 
 **Notes:**
 - **Large fills are limited by the wire.** At 40 MHz, about 5 KB fits through per millisecond. The large fills (FillScreen, FilledRects, FilledRoundRects) are within about 4 % of that limit for every fast library.
 - **How the animation test works:** It redraws a full-screen scene every frame and shows it without flicker. ILI9341_GFX uses its 16-bit framebuffer with dirty regions. The others use a full-screen sprite or canvas pushed every frame, and LovyanGFX had to use 8 bit for lack of RAM. "–" means the library had no full-screen buffer that fit into RAM.
-- **Library versions:** Adafruit_ILI9341 1.6.1, TFT_eSPI 2.5.43, LovyanGFX 1.1.16 and Arduino_GFX 1.4.9. The benchmark source is in [`extras/bench/`](extras/bench/).
+- **Library versions:** Adafruit_ILI9341 1.6.1, TFT_eSPI 2.5.43, LovyanGFX 1.1.16 and Arduino_GFX 1.4.9. The benchmark source is in [`extras/bench/`](https://github.com/JKBusse/ILI9341_GFX/blob/main/extras/bench/).
 
 ### Features
 
@@ -181,7 +181,7 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 
 ### Installation
 
-- **Arduino IDE:** Install `ILI9341_GFX` through the Library Manager. *Adafruit GFX Library* is installed with it. Until the library appears in the Library Manager, download the repository as ZIP and use *Sketch → Include Library → Add .ZIP Library*.
+- **Arduino IDE:** Install `ILI9341_GFX` through the Library Manager. Adafruit GFX Library is installed with it. Until the library appears in the Library Manager, download the repository as ZIP and use Sketch → Include Library → Add .ZIP Library.
 - **PlatformIO:** Add the library from the [PlatformIO registry](https://registry.platformio.org/libraries/jkbusse/ILI9341_GFX) to `platformio.ini`:
 
   ```ini
@@ -218,8 +218,8 @@ void loop() {
 ```
 
 There are two examples:
-- [`Basic`](examples/Basic/Basic.ino) draws directly on the display.
-- [`Framebuffer`](examples/Framebuffer/Framebuffer.ino) is a bouncing-balls animation with VSync.
+- [`Basic`](https://github.com/JKBusse/ILI9341_GFX/blob/main/examples/Basic/Basic.ino) draws directly on the display.
+- [`Framebuffer`](https://github.com/JKBusse/ILI9341_GFX/blob/main/examples/Framebuffer/Framebuffer.ino) is a bouncing-balls animation with VSync.
 
 ### Sharing the SPI bus
 
@@ -398,7 +398,7 @@ python3 extras/tools/benchrun.py bench_ours       # benchmark this library only
 python3 extras/tools/tftctl.py t T20 D V10 -t 10  # on-board checks
 ```
 
-**Continuous integration** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every push:
+**Continuous integration** ([`.github/workflows/ci.yml`](https://github.com/JKBusse/ILI9341_GFX/blob/main/.github/workflows/ci.yml)) runs on every push:
 - Arduino Lint in the strict Library Manager mode.
 - The host tests.
 - The examples, compiled for ESP32 with core 2.0.17 and 3.3.12, for ESP32-S3 and ESP32-C3, and for Arduino Uno.
@@ -453,4 +453,4 @@ python3 extras/tools/tftctl.py --listen shots/    # Enter or BOOT button = scree
 
 ## License
 
-[MIT](LICENSE). The map data of the navigation demo (`extras/demo/nav_map.h`) is © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), licensed under the ODbL. The library uses the [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) (BSD license) as a dependency, including its built-in 5×7 font.
+[MIT](https://github.com/JKBusse/ILI9341_GFX/blob/main/LICENSE). The map data of the navigation demo (`extras/demo/nav_map.h`) is © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), licensed under the ODbL. The library uses the [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library) (BSD license) as a dependency, including its built-in 5×7 font.
