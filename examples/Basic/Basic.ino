@@ -41,6 +41,8 @@ void loop() {
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_GREEN, ILI9341_NAVY);
   tft.setCursor(215, 72);
-  tft.printf("%6lu", (unsigned long)n++);
+  char buf[12];
+  snprintf(buf, sizeof(buf), "%6lu", (unsigned long)n++);
+  tft.print(buf);
   delay(50);
 }

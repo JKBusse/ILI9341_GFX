@@ -1,6 +1,5 @@
 #include "ILI9341_Framebuffer.h"
 
-#include <algorithm>
 
 // Klassischer 5x7-Font von Adafruit_GFX (dort static, daher hier eingebunden)
 #include "glcdfont.c"
@@ -249,9 +248,9 @@ template <typename T> void ILI9341_FramebufferT<T>::scroll(int16_t delta) {
   int16_t len = _vsa;
   int16_t k = ((delta % len) + len) % len;
   if (!(rotation & 1)) {
-    std::rotate(_rows + s0, _rows + s0 + k, _rows + s0 + len);
+    ili9341_detail::rotate(_rows + s0, _rows + s0 + k, _rows + s0 + len);
   } else {
-    for (int16_t y = 0; y < _height; y++) std::rotate(_rows[y] + s0, _rows[y] + s0 + k, _rows[y] + s0 + len);
+    for (int16_t y = 0; y < _height; y++) ili9341_detail::rotate(_rows[y] + s0, _rows[y] + s0 + k, _rows[y] + s0 + len);
   }
   (void)N;
 
@@ -396,9 +395,9 @@ void ILI9341_FramebufferT<T>::fillTriangle(int16_t x0, int16_t y0, int16_t x1, i
                                            int16_t x2, int16_t y2, uint16_t color) {
   T c = encodePx(color, _indexed, (T *)nullptr);
   int16_t a, b, y, last;
-  if (y0 > y1) { std::swap(y0, y1); std::swap(x0, x1); }
-  if (y1 > y2) { std::swap(y2, y1); std::swap(x2, x1); }
-  if (y0 > y1) { std::swap(y0, y1); std::swap(x0, x1); }
+  if (y0 > y1) { ili9341_detail::swapv(y0, y1); ili9341_detail::swapv(x0, x1); }
+  if (y1 > y2) { ili9341_detail::swapv(y2, y1); ili9341_detail::swapv(x2, x1); }
+  if (y0 > y1) { ili9341_detail::swapv(y0, y1); ili9341_detail::swapv(x0, x1); }
   if (y0 == y2) {
     a = b = x0;
     if (x1 < a) a = x1;
@@ -417,7 +416,7 @@ void ILI9341_FramebufferT<T>::fillTriangle(int16_t x0, int16_t y0, int16_t x1, i
     b = x0 + sb / dy02;
     sa += dx01;
     sb += dx02;
-    if (a > b) std::swap(a, b);
+    if (a > b) ili9341_detail::swapv(a, b);
     hspan(a, b, y, c);
   }
   sa = (int32_t)dx12 * (y - y1);
@@ -427,7 +426,7 @@ void ILI9341_FramebufferT<T>::fillTriangle(int16_t x0, int16_t y0, int16_t x1, i
     b = x0 + sb / dy02;
     sa += dx12;
     sb += dx02;
-    if (a > b) std::swap(a, b);
+    if (a > b) ili9341_detail::swapv(a, b);
     hspan(a, b, y, c);
   }
 }
@@ -508,23 +507,23 @@ template <typename T>
 void ILI9341_FramebufferT<T>::writeLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
   T c = encodePx(color, _indexed, (T *)nullptr);
   if (y0 == y1) {
-    if (x1 < x0) std::swap(x0, x1);
+    if (x1 < x0) ili9341_detail::swapv(x0, x1);
     fillSpan(x0, y0, x1 - x0 + 1, 1, c);
     return;
   }
   if (x0 == x1) {
-    if (y1 < y0) std::swap(y0, y1);
+    if (y1 < y0) ili9341_detail::swapv(y0, y1);
     fillSpan(x0, y0, 1, y1 - y0 + 1, c);
     return;
   }
   bool steep = abs(y1 - y0) > abs(x1 - x0);
   if (steep) {
-    std::swap(x0, y0);
-    std::swap(x1, y1);
+    ili9341_detail::swapv(x0, y0);
+    ili9341_detail::swapv(x1, y1);
   }
   if (x0 > x1) {
-    std::swap(x0, x1);
-    std::swap(y0, y1);
+    ili9341_detail::swapv(x0, x1);
+    ili9341_detail::swapv(y0, y1);
   }
   // Wie Adafruit_GFX::writeLine, aber vorab auf das Bild zugeschnitten: Der
   // Bresenham-Zustand nach n Schritten ist exakt berechenbar, also springen
@@ -537,7 +536,8 @@ void ILI9341_FramebufferT<T>::writeLine(int16_t x0, int16_t y0, int16_t x1, int1
     return num > 0 ? (num + dx - 1) / dx : 0;
   };
   auto minorAt = [&](int32_t n) -> int32_t { return y0 + ystep * ySteps(n); };
-  int32_t nA = max<int32_t>(0, -x0), nB = min<int32_t>(dx, majN - 1 - x0);
+  // ohne min/max: auf AVR sind das Makros
+  int32_t nA = x0 < 0 ? -x0 : 0, nB = dx < majN - 1 - x0 ? dx : majN - 1 - x0;
   if (nA > nB) return;
   // Nebenachse ist monoton: ersten und letzten Punkt im Bild per Binärsuche
   auto inLow = [&](int32_t n) { int32_t m = minorAt(n); return ystep > 0 ? m >= 0 : m < minN; };

@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Arduino Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: arduino/arduino-lint-action@v3
+        with:
+          library-manager: update
+          compliance: strict
+
+  host-tests:
+    name: Host tests (pixel-identical to Adafruit_GFX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Get Adafruit GFX Library
+        run: git clone --depth 1 --branch 1.12.6 https://github.com/adafruit/Adafruit-GFX-Library.git "$RUNNER_TEMP/Adafruit-GFX"
+      - name: Run host tests
+        run: ADAFRUIT_GFX="$RUNNER_TEMP/Adafruit-GFX" extras/test/host/run.sh
+
+  examples:
+    name: Examples (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ESP32, core 2.0.17
+            fqbn: esp32:esp32:esp32
+            platforms: |
+              - name: esp32:esp32
+                version: 2.0.17
+                source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            sketches: examples
+          - name: ESP32, core 3.3.12
+            fqbn: esp32:esp32:esp32
+            platforms: |
+              - name: esp32:esp32
+                version: 3.3.12
+                source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            sketches: examples
+          - name: ESP32-S3 (SPI fallback)
+            fqbn: esp32:esp32:esp32s3
+            platforms: |
+              - name: esp32:esp32
+                version: 3.3.12
+                source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            sketches: examples
+          - name: ESP32-C3 (SPI fallback)
+            fqbn: esp32:esp32:esp32c3
+            platforms: |
+              - name: esp32:esp32
+                version: 3.3.12
+                source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+            sketches: examples
+          - name: Arduino Uno (SPI fallback)
+            fqbn: arduino:avr:uno
+            platforms: |
+              - name: arduino:avr
+            sketches: examples/Basic
+    steps:
+      - uses: actions/checkout@v7
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: ${{ matrix.fqbn }}
+          platforms: ${{ matrix.platforms }}
+          libraries: |
+            - source-path: ./
+            - name: Adafruit GFX Library
+          sketch-paths: |
+            - ${{ matrix.sketches }}
+          enable-warnings-report: true
+
+  demo:
+    name: Demo firmware (PlatformIO, ${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [nodemcu-32s, nodemcu-32s-core3]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build
+        run: pio run -e ${{ matrix.env }}

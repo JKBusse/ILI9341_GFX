@@ -1,5 +1,7 @@
 # ILI9341_GFX
 
+[![CI](https://github.com/JKBusse/ILI9341_GFX/actions/workflows/ci.yml/badge.svg)](https://github.com/JKBusse/ILI9341_GFX/actions/workflows/ci.yml)
+
 A fast ILI9341 display driver for the ESP32 that is a drop-in **Adafruit_GFX** display class. It includes a framebuffer for flicker-free, high-frame-rate animation.
 
 | Plasma | Synthwave | Fireworks | Chart | Navigation | Trip computer |
@@ -148,7 +150,7 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 
 | Item | Requirement |
 |---|---|
-| MCU | **Classic ESP32** (ESP32-D0WD/WROOM/WROVER, e.g. NodeMCU-32S, DevKitC) for the fast path. The accelerated driver programs the SPI3 (VSPI) registers of the original ESP32 directly. ESP32-S2/S3/C3/C6 and other Arduino boards compile with the plain `SPIClass` path, without DMA, packed mode, framebuffer VSync or readback. That path is only tested in the host simulator. |
+| MCU | **Classic ESP32** (ESP32-D0WD/WROOM/WROVER, e.g. NodeMCU-32S, DevKitC) for the fast path. The accelerated driver programs the SPI3 (VSPI) registers of the original ESP32 directly. ESP32-S2/S3/C3/C6 and other Arduino boards compile with the plain `SPIClass` path, without DMA, packed mode, framebuffer VSync or readback. That path is tested in the host simulator and compiled in CI for ESP32-S3, ESP32-C3 and Arduino Uno. |
 | Framework | Arduino core for ESP32 **2.0.x** (ESP-IDF 4.4) and **3.x** (ESP-IDF 5.x). Tested on hardware with 2.0.17 and 3.3.12, with the same results and speed. In PlatformIO, `platform = espressif32` gives core 2. For core 3, use the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform. |
 | Display | ILI9341 240×320 module in **4-wire SPI mode** (separate D/C line), 3.3 V logic |
 | SPI clock | 40 MHz (default). The ESP32 can go up to 80 MHz, but the tested panel failed the readback check there. `autoSpeed()` finds the limit for your panel. |
@@ -367,6 +369,12 @@ python3 extras/tools/benchrun.py                  # benchmark all libraries
 python3 extras/tools/benchrun.py bench_ours       # benchmark this library only
 python3 extras/tools/tftctl.py t T20 D V10 -t 10  # on-board checks
 ```
+
+**Continuous integration** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every push:
+- Arduino Lint in the strict Library Manager mode.
+- The host tests.
+- The examples, compiled for ESP32 with core 2.0.17 and 3.3.12, for ESP32-S3 and ESP32-C3, and for Arduino Uno.
+- The demo firmware, built with PlatformIO for core 2 and core 3.
 
 **What the host tests do:**
 - They compile the driver and framebuffer for the PC against a simulated ILI9341.

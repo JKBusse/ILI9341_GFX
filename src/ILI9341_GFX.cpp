@@ -8,7 +8,6 @@
 #define FAST_ATTR
 #endif
 
-#include <algorithm>
 
 // Klassischer 5x7-Font von Adafruit_GFX (dort static, daher hier eingebunden)
 #include "glcdfont.c"
@@ -1245,23 +1244,23 @@ void ILI9341_GFX::drawCanvas(int16_t x, int16_t y, GFXcanvas16 &canvas) {
 // Zeile bzw. Spalte gehen als eine Strecke (ein Fenster) raus
 FAST_ATTR void ILI9341_GFX::writeLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
   if (y0 == y1) {
-    if (x1 < x0) std::swap(x0, x1);
+    if (x1 < x0) ili9341_detail::swapv(x0, x1);
     hline(x0, y0, x1 - x0 + 1, color);
     return;
   }
   if (x0 == x1) {
-    if (y1 < y0) std::swap(y0, y1);
+    if (y1 < y0) ili9341_detail::swapv(y0, y1);
     vline(x0, y0, y1 - y0 + 1, color);
     return;
   }
   bool steep = abs(y1 - y0) > abs(x1 - x0);
   if (steep) {
-    std::swap(x0, y0);
-    std::swap(x1, y1);
+    ili9341_detail::swapv(x0, y0);
+    ili9341_detail::swapv(x1, y1);
   }
   if (x0 > x1) {
-    std::swap(x0, x1);
-    std::swap(y0, y1);
+    ili9341_detail::swapv(x0, x1);
+    ili9341_detail::swapv(y0, y1);
   }
   int16_t dx = x1 - x0, dy = abs(y1 - y0), err = dx / 2, ystep = y0 < y1 ? 1 : -1;
   int16_t runStart = x0;

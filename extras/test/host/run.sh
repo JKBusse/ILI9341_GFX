@@ -5,13 +5,14 @@
 #   fbtest      Framebuffer (16 und 8 Bit): Zeichenfunktionen, Dirty-Rects, Scrollen
 #   texttest    Text im Framebuffer, alle Fonts/Größen/Rotationen
 #   directtest  Direktes Zeichnen (Linien, Kreise, Rundrechtecke, Text)
-# Voraussetzung: einmal "pio run -e nodemcu-32s" (lädt Adafruit GFX nach .pio/libdeps).
+# Voraussetzung: einmal "pio run -e nodemcu-32s" (lädt Adafruit GFX nach .pio/libdeps)
+# oder ADAFRUIT_GFX=<Pfad zur Adafruit GFX Library>.
 set -e
 cd "$(dirname "$0")"
 ROOT=../../..
 LIB=$ROOT/src
-GFX="$ROOT/.pio/libdeps/nodemcu-32s/Adafruit GFX Library"
-[ -d "$GFX" ] || { echo "Adafruit GFX fehlt: erst 'pio run -e nodemcu-32s' ausführen"; exit 1; }
+GFX="${ADAFRUIT_GFX:-$ROOT/.pio/libdeps/nodemcu-32s/Adafruit GFX Library}" # in der CI: eigener Checkout
+[ -d "$GFX" ] || { echo "Adafruit GFX fehlt: erst 'pio run -e nodemcu-32s' ausführen oder ADAFRUIT_GFX setzen"; exit 1; }
 CXX=${CXX:-c++}
 mkdir -p build
 build() { # name quelle [defines]

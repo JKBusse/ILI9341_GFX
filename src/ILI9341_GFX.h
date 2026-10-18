@@ -25,6 +25,24 @@
 struct lldesc_s;
 #endif
 
+// Kleine Helfer statt <algorithm>: AVR & Co. haben keine C++-Standardbibliothek
+namespace ili9341_detail {
+template <class T> inline void swapv(T &a, T &b) {
+  T t = a;
+  a = b;
+  b = t;
+}
+template <class T> inline void reverse(T *first, T *last) {
+  while (first < --last) swapv(*first++, *last);
+}
+// wie std::rotate: [first, last) so drehen, dass mid vorne steht
+template <class T> inline void rotate(T *first, T *mid, T *last) {
+  reverse(first, mid);
+  reverse(mid, last);
+  reverse(first, last);
+}
+} // namespace ili9341_detail
+
 #define ILI9341_TFTWIDTH  240
 #define ILI9341_TFTHEIGHT 320
 
