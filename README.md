@@ -154,7 +154,7 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 | Framework | Arduino core for ESP32 **2.0.x** (ESP-IDF 4.4) and **3.x** (ESP-IDF 5.x). Tested on hardware with 2.0.17 and 3.3.12, with the same results and speed. In PlatformIO, `platform = espressif32` gives core 2. For core 3, use the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform. |
 | Display | ILI9341 240×320 module in **4-wire SPI mode** (separate D/C line), 3.3 V logic |
 | SPI clock | 40 MHz (default). The ESP32 can go up to 80 MHz, but the tested panel failed the readback check there. `autoSpeed()` finds the limit for your panel. |
-| SPI bus | VSPI is used **exclusively**. Other SPI devices (SD card, touch) belong on HSPI. |
+| SPI bus | The driver programs VSPI directly. Other devices on the same pins (touch controller, SD card) work through `releaseBus()` / `acquireBus()`, see [Sharing the SPI bus](#sharing-the-spi-bus). |
 | Pins | SCK 18, MOSI 23, MISO 19 (default, IOMUX). CS and RST: any GPIO, or -1. **D/C: any output-capable GPIO (0–33)**, routed through the GPIO matrix in packed mode. |
 | MISO | Optional for drawing. **Required** for VSync, readback, screenshots, `autoSpeed()` and `verifyPacked()`. |
 | RAM: driver | About 52 KB of DMA-capable RAM with the default 8 DMA buffers (6.4 KB each). Use `begin(freq, n)` with fewer buffers to save RAM. |
@@ -221,6 +221,33 @@ There are two examples:
 - [`Basic`](examples/Basic/Basic.ino) draws directly on the display.
 - [`Framebuffer`](examples/Framebuffer/Framebuffer.ino) is a bouncing-balls animation with VSync.
 
+### Sharing the SPI bus
+
+Many ILI9341 modules carry a touch controller (XPT2046) or an SD card slot on the same SPI lines. The driver programs the SPI unit directly, so other libraries must only use the bus in between `releaseBus()` and `acquireBus()`:
+
+```cpp
+#include <XPT2046_Touchscreen.h>
+XPT2046_Touchscreen touch(21);       // touch CS on GPIO 21, same SCK/MOSI/MISO
+
+void setup() {
+  tft.begin();
+  tft.releaseBus();
+  SPI.begin(18, 19, 23);
+  touch.begin();
+  tft.acquireBus();
+}
+
+void loop() {
+  tft.releaseBus();                  // waits for running display transfers
+  bool touched = touch.touched();
+  TS_Point p = touch.getPoint();
+  tft.acquireBus();
+  // ... draw with tft / fb as usual
+}
+```
+
+`releaseBus()` waits for all display transfers and releases CS. `acquireBus()` sets up the SPI unit and the pins again, so the other library may change the SPI settings or call `SPI.end()`. On the hardware, this was checked by drawing on the display through `SPIClass` in between and reading both results back. On other platforms both calls do nothing, because the Arduino `SPI` class already shares the bus.
+
 ## API reference
 
 ### `ILI9341_GFX`
@@ -237,6 +264,7 @@ There are two examples:
 | `dmaBufferCount()` | DMA buffers actually allocated |
 | `releaseDmaBuffers(keep)` | Free DMA buffers until `keep` (at least 2) remain. `fb.begin()` uses this when RAM is short. |
 | `finishWrites()` | Waits for all queued transfers and releases CS |
+| `releaseBus()`, `acquireBus()` | Hand the SPI bus to other devices (e.g. `SPIClass`) and take it back |
 | `pendingBytes()` | Bytes still waiting in the DMA queue |
 | `setPacked(on)`, `packed()` | Switch packed mode (hardware D/C) on or off |
 | `verifyPacked(seed = 1)` | Readback self-test of packed mode (needs 2 KB heap). Returns the number of wrong pixels (0 = OK), or `UINT32_MAX` if there was no RAM for the test. |
@@ -420,7 +448,7 @@ python3 extras/tools/tftctl.py --listen shots/    # Enter or BOOT button = scree
 ## Limitations
 
 - **Hardware.** The library supports one controller (ILI9341). The fast path needs a classic ESP32, while other boards only get the plain SPI path.
-- **Missing features.** There are no anti-aliased fonts, no touch support and no image decoders. They combine fine with external libraries, for example XPT2046_Touchscreen on HSPI, or a JPEG decoder feeding `pushImage()`.
+- **Missing features.** There are no anti-aliased fonts, no touch support and no image decoders. They combine fine with external libraries, for example XPT2046_Touchscreen on the same bus (see [Sharing the SPI bus](#sharing-the-spi-bus)), or a JPEG decoder feeding `pushImage()`.
 - **Language.** The source code comments are in German.
 
 ## License

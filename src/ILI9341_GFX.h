@@ -162,9 +162,20 @@ public:
   uint8_t dmaBufferCount() const { return _numBufs; }
   /** Gibt DMA-Puffer frei, bis nur noch keep (mind. 2) übrig sind; wartet vorher alle Übertragungen ab. */
   void releaseDmaBuffers(uint8_t keep);
+  /**
+   * SPI-Bus mit anderen Geräten teilen (z.B. Touch-Controller oder SD-Karte
+   * über SPIClass auf denselben Pins): releaseBus() wartet alle Übertragungen
+   * ab, nimmt CS zurück und überlässt die SPI-Einheit anderen; acquireBus()
+   * übernimmt sie wieder. Dazwischen nicht auf das Display zeichnen.
+   */
+  void releaseBus();
+  void acquireBus();
 #else
   void begin(uint32_t freq = ILI9341_GFX_DEFAULT_FREQ);
   void finishWrites() {}
+  // Arduino-SPI teilt den Bus schon über Transaktionen
+  void releaseBus() {}
+  void acquireBus() {}
 #endif
   void setSPISpeed(uint32_t freq);
 
@@ -375,6 +386,7 @@ private:
   void dualOff(uint32_t user);
   void leaveDual();
   bool _packed = false;
+  bool _released = false; // Bus mit releaseBus() abgegeben
   volatile bool _dual = false; // SPI im Dual-Modus, DC hängt an der Q-Leitung
 
   struct lldesc_s *_desc = nullptr; // 2 DMA-Deskriptoren je Puffer

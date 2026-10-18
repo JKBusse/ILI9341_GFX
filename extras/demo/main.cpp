@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <SPI.h>
 #include <esp_heap_caps.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSansBold9pt7b.h>
@@ -1303,6 +1304,37 @@ void handleSerial() {
       for (int i = 0; i < n; i++) bad += tft.verifyPacked(esp_random());
       Serial.printf("PACKED runs=%d bad_px=%lu\n", n, bad);
       fb.invalidate();
+      break;
+    }
+    case 'B': { // Bus teilen: Display zwischendurch über SPIClass beschreiben, dann zurückholen und prüfen
+      tft.releaseBus();
+      SPI.begin(18, 19, 23, -1);
+      SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
+      auto cmd = [](uint8_t c) {
+        digitalWrite(TFT_DC, LOW);
+        SPI.transfer(c);
+        digitalWrite(TFT_DC, HIGH);
+      };
+      digitalWrite(TFT_CS, LOW);
+      cmd(0x2A); SPI.transfer16(40); SPI.transfer16(79);   // Spalten 40..79
+      cmd(0x2B); SPI.transfer16(30); SPI.transfer16(59);   // Zeilen 30..59
+      cmd(0x2C);
+      for (int i = 0; i < 40 * 30; i++) SPI.transfer16(0xF81F);
+      digitalWrite(TFT_CS, HIGH);
+      SPI.endTransaction();
+      SPI.end();
+      tft.acquireBus();
+      // Fremd gezeichnetes Rechteck zurücklesen (gleiche Rotation/MADCTL wie beim Zeichnen)
+      uint16_t row[40];
+      uint32_t bad = 0;
+      for (int y = 30; y < 60; y++) {
+        tft.readRect(40, y, 40, 1, row);
+        for (int x = 0; x < 40; x++) bad += row[x] != 0xF81F;
+      }
+      // Danach mit dem eigenen Treiber weiterzeichnen und prüfen
+      uint32_t packedBad = tft.verifyPacked(esp_random());
+      fb.invalidate();
+      Serial.printf("BUSSHARE foreign_bad_px=%lu packed_bad_px=%lu\n", bad, packedBad);
       break;
     }
     case 'L': // L1: Screenshot-Empfänger ist verbunden (BOOT-Taste schickt dann Bilder)

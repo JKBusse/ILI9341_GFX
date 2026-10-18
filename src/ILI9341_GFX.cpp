@@ -209,6 +209,41 @@ void ILI9341_GFX::releaseDmaBuffers(uint8_t keep) {
   _bufIdx = 0;
 }
 
+void ILI9341_GFX::releaseBus() {
+  finishWrites(); // CS ist danach HIGH
+  while (hw->cmd.val & SPI_USR) {
+  }
+  if (_dual) dualOff(USER_FULL); // DC wieder als normales GPIO
+  hw->slave.trans_inten = 0;
+  if (_intr) esp_intr_disable(_intr);
+  _released = true;
+}
+
+void ILI9341_GFX::acquireBus() {
+  if (!_released) return;
+  // Pins zurück an die SPI-Einheit (andere Treiber haben sie evtl. umgelegt
+  // oder mit SPI.end() abgehängt). Über die GPIO-Matrix: dieselbe API in
+  // ESP-IDF 4.4 und 5.x, für 40 MHz Schreibtakt ausreichend.
+  esp_rom_gpio_pad_select_gpio(_sck);
+  gpio_set_direction((gpio_num_t)_sck, GPIO_MODE_OUTPUT);
+  esp_rom_gpio_connect_out_signal(_sck, VSPICLK_OUT_IDX, false, false);
+  esp_rom_gpio_pad_select_gpio(_mosi);
+  gpio_set_direction((gpio_num_t)_mosi, GPIO_MODE_OUTPUT);
+  esp_rom_gpio_connect_out_signal(_mosi, VSPID_OUT_IDX, false, false);
+  if (_miso >= 0) {
+    esp_rom_gpio_pad_select_gpio(_miso);
+    gpio_set_direction((gpio_num_t)_miso, GPIO_MODE_INPUT);
+    esp_rom_gpio_connect_in_signal(_miso, VSPIQ_IN_IDX, false);
+  }
+  configureHw();
+  _intOn = true;
+  _dmaDirty = true; // DMA-Reste beim nächsten Registerzugriff beseitigen
+  _dual = false;
+  if (_intr) esp_intr_enable(_intr);
+  invalidateAddrCache(); // das Fenster kann sich geändert haben
+  _released = false;
+}
+
 void ILI9341_GFX::configureHw() {
   spi_ll_master_init(hw);
   hw->user.val = 0;
