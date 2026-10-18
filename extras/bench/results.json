@@ -1,19 +1,19 @@
 {
  "bench_ours": {
   "tests": {
-   "FillScreen": 154200,
-   "Text": 6782,
-   "Lines": 200775,
-   "HV-Lines": 13154,
-   "Rects": 8599,
-   "FilledRects": 317332,
-   "FilledCircles": 40858,
-   "Circles": 19781,
-   "Triangles": 11990,
-   "FilledTriangles": 112303,
-   "RoundRects": 12877,
+   "FillScreen": 154189,
+   "Text": 6779,
+   "Lines": 200869,
+   "HV-Lines": 13159,
+   "Rects": 8568,
+   "FilledRects": 317328,
+   "FilledCircles": 40881,
+   "Circles": 19776,
+   "Triangles": 12162,
+   "FilledTriangles": 112290,
+   "RoundRects": 12873,
    "FilledRoundRects": 324902,
-   "PushImage320x240": 30907
+   "PushImage320x240": 30906
   },
   "anim": {
    "Vollbild": {
@@ -21,20 +21,20 @@
     "info": "Framebuffer_16bit_Diff"
    },
    "Ball": {
-    "fps": 1635.2,
+    "fps": 1635.7,
     "info": "Framebuffer_16bit_Diff"
    },
    "Vollbild_VSync": {
-    "fps": 81.5,
+    "fps": 81.4,
     "info": "Framebuffer_16bit_Diff_VSync"
    },
    "Ball_VSync": {
-    "fps": 327.1,
+    "fps": 325.7,
     "info": "Framebuffer_16bit_Diff_VSync"
    }
   },
   "heap": {
-   "free": 91152,
+   "free": 90820,
    "maxblk": 12788
   }
  },

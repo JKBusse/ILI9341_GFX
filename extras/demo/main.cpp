@@ -1021,7 +1021,7 @@ void setup() {
   analogWrite(TFT_BL, 255); // Helligkeit 0..255
   // Reihenfolge: erst die Partikel, dann so viele DMA-Puffer wie passen
   if (!fireworks::alloc()) Serial.println("Nicht genug RAM fuer die Feuerwerk-Partikel!");
-  tft.begin(spiFreq, 10); // bis zu 10 DMA-Puffer à 6,4 KB
+  tft.begin(spiFreq, 10); // bis zu 10 DMA-Puffer à 6,4 KB (fb.begin() gibt notfalls welche ab)
   spiFreq = tft.autoSpeed(); // höchsten fehlerfreien Takt per Readback ermitteln
   Serial.printf("INFO auto_speed_mhz=%.2f\n", spiFreq / 1e6f);
   if (!spiFreq) spiFreq = tft.spiSpeed();

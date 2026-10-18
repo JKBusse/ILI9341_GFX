@@ -142,6 +142,8 @@ public:
   void finishWrites();
   /** Tatsächlich angelegte DMA-Puffer (weniger als angefordert, wenn RAM knapp war). */
   uint8_t dmaBufferCount() const { return _numBufs; }
+  /** Gibt DMA-Puffer frei, bis nur noch keep (mind. 2) übrig sind; wartet vorher alle Übertragungen ab. */
+  void releaseDmaBuffers(uint8_t keep);
 #else
   void begin(uint32_t freq = ILI9341_GFX_DEFAULT_FREQ);
   void finishWrites() {}
@@ -225,7 +227,7 @@ public:
    */
   void setPacked(bool on);
   bool packed() const { return _packed; }
-  /** Prüft den gepackten Modus per Readback (braucht MISO); Rückgabe: falsche Pixel. */
+  /** Prüft den gepackten Modus per Readback (braucht MISO und 2 KB Heap); Rückgabe: falsche Pixel, UINT32_MAX = kein RAM. */
   uint32_t verifyPacked(uint32_t seed = 1);
   /** Panel-Reset und Init-Sequenz erneut (Inhalt geht verloren). */
   void reinitPanel();

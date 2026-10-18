@@ -28,7 +28,10 @@ public:
   explicit ILI9341_FramebufferT(ILI9341_GFX &tft);
   ~ILI9341_FramebufferT();
 
-  /** Puffer anlegen. Nach tft.begin() aufrufen. false = nicht genug RAM. */
+  /**
+   * Puffer anlegen. Nach tft.begin() aufrufen. Reicht der Heap nicht, gibt der
+   * Treiber DMA-Puffer ab (mindestens 4 bleiben). false = nicht genug RAM.
+   */
   bool begin();
 
   /** Überträgt alle geänderten Bereiche zum Display. */
@@ -140,11 +143,12 @@ public:
 
 private:
   static constexpr uint32_t TOTAL_PX = (uint32_t)ILI9341_TFTWIDTH * ILI9341_TFTHEIGHT;
-  static constexpr uint8_t MAX_CHUNKS = 40;
+  static constexpr uint8_t MAX_CHUNKS = 80; // 80 x 960 px im ungünstigsten Fall
   static constexpr uint8_t SEG_PX = 32; // Breite eines Hash-Segments (max. 32 Segmente je Zeile)
   static constexpr uint16_t MAX_SEGS = ILI9341_TFTHEIGHT * ((ILI9341_TFTWIDTH + SEG_PX - 1) / SEG_PX);
 
   void mapRows();
+  bool allocate();
 #if ILI9341_GFX_ESP32
   void displayVSync();
   struct RunU {
@@ -183,7 +187,7 @@ private:
   ILI9341_GFX &_tft;
   T *_chunks[MAX_CHUNKS] = {};
   uint8_t _nChunks = 0;
-  uint32_t _chunkPx = 0;
+  uint32_t _chunkEnd[MAX_CHUNKS] = {}; // Pixelindex nach dem Ende von Block i
   T *_rows[ILI9341_TFTHEIGHT] = {};
   uint16_t *_lut = nullptr; // nur 8 Bit: Index -> RGB565, bereits byte-getauscht
   bool _indexed = false;    // nur 8 Bit: Farben sind Palettenindizes

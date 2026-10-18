@@ -149,14 +149,14 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 | Item | Requirement |
 |---|---|
 | MCU | **Classic ESP32** (ESP32-D0WD/WROOM/WROVER, e.g. NodeMCU-32S, DevKitC) for the fast path. The accelerated driver programs the SPI3 (VSPI) registers of the original ESP32 directly. ESP32-S2/S3/C3/C6 and other Arduino boards compile with the plain `SPIClass` path, without DMA, packed mode, framebuffer VSync or readback. That path is only tested in the host simulator. |
-| Framework | Arduino core for ESP32 2.0.x (ESP-IDF 4.4), tested with 2.0.17 under PlatformIO. Core 3.x is untested. |
+| Framework | Arduino core for ESP32 **2.0.x** (ESP-IDF 4.4) and **3.x** (ESP-IDF 5.x). Tested on hardware with 2.0.17 and 3.3.12, with the same results and speed. In PlatformIO, `platform = espressif32` gives core 2. For core 3, use the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform. |
 | Display | ILI9341 240×320 module in **4-wire SPI mode** (separate D/C line), 3.3 V logic |
 | SPI clock | 40 MHz (default). The ESP32 can go up to 80 MHz, but the tested panel failed the readback check there. `autoSpeed()` finds the limit for your panel. |
 | SPI bus | VSPI is used **exclusively**. Other SPI devices (SD card, touch) belong on HSPI. |
 | Pins | SCK 18, MOSI 23, MISO 19 (default, IOMUX). CS and RST: any GPIO, or -1. **D/C: any output-capable GPIO (0–33)**, routed through the GPIO matrix in packed mode. |
 | MISO | Optional for drawing. **Required** for VSync, readback, screenshots, `autoSpeed()` and `verifyPacked()`. |
 | RAM: driver | About 52 KB of DMA-capable RAM with the default 8 DMA buffers (6.4 KB each). Use `begin(freq, n)` with fewer buffers to save RAM. |
-| RAM: framebuffer | 16 bit: 150 KB plus 10 KB hashes. 8 bit: 75 KB plus 10 KB. No PSRAM needed. |
+| RAM: framebuffer | 16 bit: 150 KB plus 10 KB hashes. 8 bit: 75 KB plus 10 KB. No PSRAM needed. The buffer is split into blocks of mixed sizes (1.9 to 38 KB), so it also fits into a fragmented heap. If the heap is still too small, `fb.begin()` takes back DMA buffers from the driver, keeping at least 4. |
 | CPU | 240 MHz recommended (Arduino default) |
 
 **Tested wiring** (NodeMCU-32S):
@@ -173,7 +173,7 @@ The ✓ and – marks for the other libraries describe their documented, built-i
 | LED | GPIO 13 (backlight, or 3V3) |
 | SDO (MISO) | GPIO 19 |
 
-**With Wi-Fi:** The 16-bit framebuffer and Wi-Fi together leave little heap. Use `ILI9341_Framebuffer8` or fewer DMA buffers, e.g. `tft.begin(40000000, 4)`.
+**With Wi-Fi:** The 16-bit framebuffer and Wi-Fi together leave little heap. `fb.begin()` frees DMA buffers on its own if needed. If it still returns `false`, use `ILI9341_Framebuffer8`.
 
 ## Quick start
 
@@ -233,10 +233,11 @@ There are two examples:
 | `setSPISpeed(freq)`, `spiSpeed()` | Set or get the SPI write clock |
 | `autoSpeed(maxFreq = 80 MHz)` | Finds the highest clock that passes a readback test and sets it. The panel is re-initialised, so content is lost. Returns Hz. |
 | `dmaBufferCount()` | DMA buffers actually allocated |
+| `releaseDmaBuffers(keep)` | Free DMA buffers until `keep` (at least 2) remain. `fb.begin()` uses this when RAM is short. |
 | `finishWrites()` | Waits for all queued transfers and releases CS |
 | `pendingBytes()` | Bytes still waiting in the DMA queue |
 | `setPacked(on)`, `packed()` | Switch packed mode (hardware D/C) on or off |
-| `verifyPacked(seed = 1)` | Readback self-test of packed mode. Returns the number of wrong pixels (0 = OK). |
+| `verifyPacked(seed = 1)` | Readback self-test of packed mode (needs 2 KB heap). Returns the number of wrong pixels (0 = OK), or `UINT32_MAX` if there was no RAM for the test. |
 | `reinitPanel()` | Hardware reset and init sequence again |
 
 **Drawing**
@@ -287,7 +288,7 @@ There are two examples:
 | Function | Description |
 |---|---|
 | `ILI9341_Framebuffer fb(tft)` | Create a framebuffer for a display (no allocation yet) |
-| `begin()` | Allocate the buffer (call after `tft.begin()`). Returns `false` if RAM is short. |
+| `begin()` | Allocate the buffer (call after `tft.begin()`). Frees DMA buffers of the driver if needed (at least 4 remain). Returns `false` if RAM is short. |
 | All `Adafruit_GFX` functions | Draw into RAM |
 | `display()` | Send the changed regions to the display |
 | `invalidate()` | Make the next `display()` send everything, e.g. after drawing directly on `tft` |

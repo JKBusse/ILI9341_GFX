@@ -24,9 +24,8 @@
 #include "soc/spi_struct.h"
 #include "soc/gpio_struct.h"
 #include "soc/gpio_sig_map.h"
-#include "soc/io_mux_reg.h"
 #include "driver/gpio.h"
-#include "rom/gpio.h"
+#include "esp_rom_gpio.h" // in ESP-IDF 4.4 und 5.x gleich
 #endif
 
 // Init-Sequenz: Befehl, Anzahl Datenbytes (Bit 7 = danach 150 ms warten), Daten...
@@ -170,9 +169,9 @@ void ILI9341_GFX::begin(uint32_t freq, uint8_t dmaBuffers) {
   if (_miso >= 0) {
     // MISO über die GPIO-Matrix statt IOMUX: im Dual-Modus treibt die
     // SPI-Einheit die Q-Leitung, die dann nur am DC-Pin ankommen soll
-    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[_miso], PIN_FUNC_GPIO);
+    esp_rom_gpio_pad_select_gpio(_miso);
     gpio_set_direction((gpio_num_t)_miso, GPIO_MODE_INPUT);
-    gpio_matrix_in(_miso, VSPIQ_IN_IDX, false);
+    esp_rom_gpio_connect_in_signal(_miso, VSPIQ_IN_IDX, false);
   }
 
   if (!_desc) _desc = (lldesc_t *)heap_caps_calloc(MAX_BUFS * 2, sizeof(lldesc_t), MALLOC_CAP_DMA);
@@ -197,6 +196,18 @@ void ILI9341_GFX::begin(uint32_t freq, uint8_t dmaBuffers) {
   invalidateAddrCache();
   initSpread();
   setPacked(true);
+}
+
+void ILI9341_GFX::releaseDmaBuffers(uint8_t keep) {
+  if (keep < 2) keep = 2;
+  finishWrites();
+  while (_numBufs > keep) {
+    _numBufs--;
+    heap_caps_free(_buf[_numBufs]);
+    _buf[_numBufs] = nullptr;
+    _bufSeq[_numBufs] = 0;
+  }
+  _bufIdx = 0;
 }
 
 void ILI9341_GFX::configureHw() {
@@ -313,7 +324,8 @@ FAST_ATTR uint32_t ILI9341_GFX::submit(const Op &op) {
     while (hw->cmd.val & SPI_USR) {
     }
     startOp(op);
-    seq = ++_submitted;
+    _submitted = _submitted + 1; // kein ++ auf volatile (C++20)
+    seq = _submitted;
     _doneSeq = seq;
     return seq;
   }
@@ -323,7 +335,8 @@ FAST_ATTR uint32_t ILI9341_GFX::submit(const Op &op) {
     _ops[_opHead % NUM_OPS] = op;
     _pendingBytes = _pendingBytes + op.len;
     _opHead = _opHead + 1;
-    seq = ++_submitted;
+    _submitted = _submitted + 1; // kein ++ auf volatile (C++20)
+    seq = _submitted;
     if (!_busy) {
       _busy = true;
       startOp(_ops[_opTail % NUM_OPS]);
@@ -878,9 +891,8 @@ uint16_t ILI9341_GFX::getScanline() {
 // ein gültiges ILI9341-Kommando ist. Rückgabe: Anzahl falscher Pixel.
 uint32_t ILI9341_GFX::verifyPacked(uint32_t seed) {
   const int16_t X = 112, Y = 112, S = 32;
-  uint16_t *want = (uint16_t *)malloc(2 * S * S * sizeof(uint16_t));
-  if (!want) return S * S;
-  uint16_t *got = want + S * S;
+  uint16_t *want = (uint16_t *)malloc(S * S * sizeof(uint16_t)); // 2 KB
+  if (!want) return UINT32_MAX; // nicht testbar (kein RAM)
   bool keep = _packed;
   _packed = false;
   // Hintergrund über die Befehlsliste (DMA): prüft auch den Wechsel DMA -> Dual
@@ -905,9 +917,12 @@ uint32_t ILI9341_GFX::verifyPacked(uint32_t seed) {
   }
   endWrite();
   _packed = keep;
-  readRect(X, Y, S, S, got);
+  uint16_t got[S]; // zeilenweise zurücklesen: nur 64 Byte Stack
   uint32_t bad = 0;
-  for (int i = 0; i < S * S; i++) bad += got[i] != want[i];
+  for (int16_t r = 0; r < S; r++) {
+    readRect(X, Y + r, S, 1, got);
+    for (int i = 0; i < S; i++) bad += got[i] != want[r * S + i];
+  }
   free(want);
   return bad;
 }

@@ -10,8 +10,10 @@
 #endif
 
 // Blockgrößen sind Vielfache von 960 px (= kgV von 240 und 320), damit in
-// jeder Rotation ganze Zeilen in einen Block passen.
-static const uint32_t CHUNK_SIZES[] = {19200, 9600, 4800, 1920};
+// jeder Rotation ganze Zeilen in einen Block passen. Gemischt verwendet: erst
+// große Blöcke, der Rest mit kleineren (zerstückelter Heap, z.B. mit WLAN
+// oder Arduino-Core 3.x).
+static const uint32_t CHUNK_SIZES[] = {19200, 9600, 4800, 1920, 960};
 
 static inline void fillPx(uint16_t *p, uint16_t c, int32_t n) {
   if ((c >> 8) == (c & 0xFF)) {
@@ -116,33 +118,46 @@ template <typename T> void ILI9341_FramebufferT<T>::useRGB332() {
 template <typename T>
 bool ILI9341_FramebufferT<T>::begin() {
   if (_nChunks) return true;
+  bool ok = allocate();
+#if ILI9341_GFX_ESP32
+  // Der Framebuffer hat Vorrang vor zusätzlichen DMA-Puffern
+  while (!ok && _tft.dmaBufferCount() > 4) {
+    _tft.releaseDmaBuffers(_tft.dmaBufferCount() - 1);
+    ok = allocate();
+  }
+#endif
+  if (!ok) return false;
+  setRotation(_tft.getRotation());
+  fillScreen(0);
+  return true;
+}
+
+// Bildpuffer, Hashes und (8 Bit) Farbtabelle anlegen; bei Fehlschlag alles freigeben
+template <typename T>
+bool ILI9341_FramebufferT<T>::allocate() {
 
 #if ILI9341_GFX_ESP32
   if (psramFound()) {
     _chunks[0] = (T *)ps_malloc(TOTAL_PX * sizeof(T));
     if (_chunks[0]) {
       _nChunks = 1;
-      _chunkPx = TOTAL_PX;
+      _chunkEnd[0] = TOTAL_PX;
     }
   }
 #endif
 
+  uint32_t done = _nChunks ? TOTAL_PX : 0;
   for (uint32_t size : CHUNK_SIZES) {
-    if (_nChunks) break;
-    uint8_t n = TOTAL_PX / size, i = 0;
-    for (; i < n; i++) {
-      _chunks[i] = (T *)malloc(size * sizeof(T));
-      if (!_chunks[i]) break;
-    }
-    if (i == n) {
-      _nChunks = n;
-      _chunkPx = size;
-    } else {
-      while (i) free(_chunks[--i]);
+    while (done + size <= TOTAL_PX && _nChunks < MAX_CHUNKS) {
+      T *p = (T *)malloc(size * sizeof(T));
+      if (!p) break;
+      _chunks[_nChunks] = p;
+      done += size;
+      _chunkEnd[_nChunks++] = done;
     }
   }
 
-  if (!_nChunks) {
+  if (done < TOTAL_PX) {
     freeBuffers();
     return false;
   }
@@ -180,17 +195,18 @@ bool ILI9341_FramebufferT<T>::begin() {
     }
     useRGB332();
   }
-
-  setRotation(_tft.getRotation());
-  fillScreen(0);
   return true;
 }
 
 template <typename T>
 void ILI9341_FramebufferT<T>::mapRows() {
-  uint32_t rowsPerChunk = _chunkPx / _width;
-  for (int16_t y = 0; y < _height; y++)
-    _rows[y] = _chunks[y / rowsPerChunk] + (y % rowsPerChunk) * _width;
+  uint8_t c = 0;
+  uint32_t start = 0; // erster Pixelindex von Block c
+  for (int16_t y = 0; y < _height; y++) {
+    uint32_t off = (uint32_t)y * _width;
+    while (off >= _chunkEnd[c]) start = _chunkEnd[c++];
+    _rows[y] = _chunks[c] + (off - start);
+  }
 }
 
 template <typename T>
