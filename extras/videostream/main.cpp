@@ -30,7 +30,9 @@
 // Drei Frame-Puffer: während einer dekodiert wird, laden die anderen. Ist keiner
 // frei, wartet der Netzwerk-Task (TCP bremst dann die Quelle).
 //
-// Bauen: WIFI_SSID=... WIFI_PASS=... STREAM_URL=http://... \
+// WLAN-Daten werden im NVS gespeichert: einmal mit WIFI_SSID/WIFI_PASS bauen,
+// danach reicht ein Build ohne (z.B. für Tests). Bauen:
+//        WIFI_SSID=... WIFI_PASS=... STREAM_URL=http://... \
 //        pio run -e videostream -t upload
 // Kein Framebuffer: der Heap wird für WLAN/TLS gebraucht.
 
@@ -38,6 +40,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
 #include <JPEGDEC.h>
 #include "ILI9341_GFX.h"
 
@@ -91,6 +94,8 @@ static volatile uint8_t curSource = 0; // loop() setzt, Netzwerk-Task folgt
 #ifndef STREAM_FPS
 #define STREAM_FPS 25 // Wiedergaberate für .mjpeg-Dateien (AVI: aus dem Dateikopf)
 #endif
+
+static char wifiSsid[33], wifiPass[65]; // aus dem Build oder dem NVS
 
 static const uint32_t FRAME_BUF = 16 * 1024; // größtes JPEG (größere werden verworfen)
 static const uint8_t NUM_BUFS = 3;            // zusammen 48 KB, mehr lässt TLS zu wenig Heap
@@ -221,9 +226,9 @@ static void netTask(void *) {
     const char *url = source(src).url;
     if (WiFi.status() != WL_CONNECTED) {
       streaming = false;
-      setStatus("WLAN \"%s\" ...", WIFI_SSID);
+      setStatus("WLAN \"%s\" ...", wifiSsid);
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      WiFi.begin(wifiSsid, wifiPass);
       for (int t = 0; t < 200 && WiFi.status() != WL_CONNECTED; t++) vTaskDelay(pdMS_TO_TICKS(100));
       if (WiFi.status() != WL_CONNECTED) continue;
       setStatus("WLAN ok, IP %s", WiFi.localIP().toString().c_str());
@@ -288,31 +293,46 @@ static uint32_t statLate = 0, statMaxUs = 0; // Frames, die länger als zwei Ref
 // Refresh-Raten flimmern bei manchen Panels sichtbar, VSync braucht aber zwei
 // Refreshes pro Frame (~26-30 ms). Bei 50 Hz steht jeder Frame mit 25 fps exakt
 // zwei Refreshes lang, bei 75 Hz kann es knapp werden (siehe "late" in STAT).
+// Die tatsächliche Rate weicht je nach Panel deutlich vom Datenblatt ab
+// (gemessen: DIVA 1/RTNA 0x18 = 46 statt 50 Hz), daher wird für die
+// VSync-Modi die langsamste Einstellung gesucht, die mindestens minHz erreicht.
 struct Mode {
   const char *name;
+  float minHz; // VSync-Modi: Mindestrate (0 = feste Einstellung rtna)
   uint8_t diva, rtna;
   bool vsync;
 };
 static const Mode MODES[] = {
-    {"VS50", 1, 0x18, true},  // ~50 Hz
-    {"VS60", 1, 0x14, true},  // ~60 Hz
-    {"VS75", 1, 0x10, true},  // ~75 Hz
-    {"92Hz", 0, 0x18, false}, // Standard des Panels, ohne VSync (Tearing)
+    {"VS50", 50.3f, 1, 0, true}, // >= 50 Hz: 25 fps = genau zwei Refreshes
+    {"VS60", 60.0f, 1, 0, true},
+    {"VS75", 75.0f, 1, 0, true},
+    {"92Hz", 0, 0, 0x18, false}, // Standard des Panels, ohne VSync (Tearing)
 };
 static const uint8_t NUM_MODES = sizeof(MODES) / sizeof(MODES[0]);
 static uint8_t mode = 0; // VS50: am Panel verglichen sah das am besten aus
 static void waitVSync();
 
-static void applyMode(uint8_t m) {
-  mode = m % NUM_MODES;
-  tft.setFrameRate(MODES[mode].diva, MODES[mode].rtna);
+/** Stellt die Rate ein und misst die Dauer eines Refreshs. */
+static float measureRefreshUs(uint8_t diva, uint8_t rtna, int n) {
+  tft.setFrameRate(diva, rtna);
   delay(30); // neue Rate einschwingen lassen
   waitVSync();
   uint32_t t = micros();
-  for (int i = 0; i < 10; i++) waitVSync();
-  refreshUs = (micros() - t) / 10.0f;
+  for (int i = 0; i < n; i++) waitVSync();
+  return (micros() - t) / (float)n;
+}
+
+static void applyMode(uint8_t m) {
+  mode = m % NUM_MODES;
+  const Mode &md = MODES[mode];
+  uint8_t rtna = md.rtna;
+  if (md.minHz > 0) { // langsamste Einstellung (höchstes RTNA) mit mindestens minHz
+    for (rtna = 0x1F; rtna > 0x10; rtna--)
+      if (1e6f / measureRefreshUs(md.diva, rtna, 4) >= md.minHz) break;
+  }
+  refreshUs = measureRefreshUs(md.diva, rtna, 10);
   statLate = 0;
-  Serial.printf("INFO mode=%s refresh=%.1f Hz\n", MODES[mode].name, 1e6f / refreshUs);
+  Serial.printf("INFO mode=%s rtna=0x%02X refresh=%.1f Hz\n", md.name, rtna, 1e6f / refreshUs);
 }
 
 static int drawMCUs(JPEGDRAW *d) {
@@ -403,6 +423,14 @@ static void screenshot() {
   tft.setRotation(rot);
 }
 
+/** Andere Quelle wählen (BOOT-Taste oder seriell "s<n>"). */
+static void selectSource(uint8_t i) {
+  curSource = i;
+  streaming = false;
+  setStatus("Verbinde ...");
+  Serial.printf("INFO Quelle %u: %s\n", curSource, source(curSource).name);
+}
+
 void setup() {
   Serial.begin(921600);
   pinMode(TFT_BL, OUTPUT);
@@ -412,7 +440,17 @@ void setup() {
   pinMode(0, INPUT_PULLUP); // BOOT-Taste: nächste Quelle
   applyMode(mode);
 
-  if (!*WIFI_SSID) {
+  // WLAN-Daten: aus dem Build übernehmen und speichern, sonst aus dem NVS
+  Preferences prefs;
+  prefs.begin("videostream");
+  if (*WIFI_SSID) {
+    prefs.putString("ssid", WIFI_SSID);
+    prefs.putString("pass", WIFI_PASS);
+  }
+  prefs.getString("ssid", wifiSsid, sizeof(wifiSsid));
+  prefs.getString("pass", wifiPass, sizeof(wifiPass));
+  prefs.end();
+  if (!*wifiSsid) {
     setStatus("WIFI_SSID beim Bauen setzen (siehe platformio.ini)");
     showStatus();
     while (true) delay(1000);
@@ -445,10 +483,11 @@ void loop() {
   while (Serial.available()) {
     int c = Serial.read();
     if (c == 'P') screenshot();
-    if (c == 'm') {
+    if (c == 'm' || c == 's') {
       delay(2);
-      int d = Serial.read();
-      if (d >= '0' && d < '0' + NUM_MODES) applyMode(d - '0'), statsDirty = true;
+      int d = Serial.read() - '0';
+      if (c == 'm' && d >= 0 && d < NUM_MODES) applyMode(d), statsDirty = true;
+      if (c == 's' && d >= 0 && d < NUM_CHOICES) selectSource(d);
     }
   }
   // BOOT-Taste (entprellt): nächste Quelle. Der Netzwerk-Task bricht die
@@ -458,10 +497,7 @@ void loop() {
   bool btn = digitalRead(0);
   if (!btn && btnPrev && millis() - btnT > 200) {
     btnT = millis();
-    curSource = (curSource + 1) % NUM_CHOICES;
-    streaming = false;
-    setStatus("Verbinde ...");
-    Serial.printf("INFO Quelle %u: %s\n", curSource, source(curSource).name);
+    selectSource((curSource + 1) % NUM_CHOICES);
   }
   btnPrev = btn;
 
@@ -553,8 +589,8 @@ void loop() {
   if (millis() - t0 >= 1000) {
     uint32_t bytes = statBytes;
     kbps = (bytes - bytes0) * 8 / 1000;
-    Serial.printf("STAT fps=%lu kbps=%lu dec_ms=%.1f max_ms=%.1f late=%lu mode=%s hz=%.1f drop=%lu conn=%lu heap=%u rssi=%d\n",
-                  (unsigned long)frames, (unsigned long)kbps, frames ? decodeUs / 1000.0f / frames : 0.0f,
+    Serial.printf("STAT src=%u fps=%lu kbps=%lu dec_ms=%.1f max_ms=%.1f late=%lu mode=%s hz=%.1f drop=%lu conn=%lu heap=%u rssi=%d\n",
+                  curSource, (unsigned long)frames, (unsigned long)kbps, frames ? decodeUs / 1000.0f / frames : 0.0f,
                   statMaxUs / 1000.0f, (unsigned long)statLate, MODES[mode].name, 1e6f / refreshUs, (unsigned long)statDropped,
                   (unsigned long)statConnects, ESP.getFreeHeap(), WiFi.RSSI());
     statMaxUs = 0;
