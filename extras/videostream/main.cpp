@@ -57,6 +57,10 @@
 // Big Buck Bunny (c) 2008 Blender Foundation | www.bigbuckbunny.org, CC BY 3.0.
 // Öffentliche Live-Kameras, die passen (geprüft 10/2026: Baseline-JPEG mit
 // Huffman-Tabellen, Frames < 16 KB; können jederzeit offline gehen):
+//   http://mzinfo.dnshome.de:5010/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50
+//     Hannover Hbf (zander-info.de), ~29 fps; 5011 Hamburger Allee ~25 fps,
+//     5009 Raschplatz ~12 fps, 5012 Wetterkamera ~1 fps. Ohne compression=50
+//     sind die Frames bis 58 KB groß und werden verworfen.
 //   https://195.196.36.242/mjpg/video.mjpg?resolution=320x240  Pajala (S), Marktplatz, ~17 fps
 //   http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240  Italien, Kathedrale, ~3 fps
 //   http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard  Tokio, ~2 fps
