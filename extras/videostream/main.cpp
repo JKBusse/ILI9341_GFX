@@ -55,8 +55,11 @@
 // Standardquelle: 2 Minuten Big Buck Bunny als MJPEG (320x176, gedreht
 // gespeichert als 176x320, 25 fps), Asset des Releases "demo-media" dieses Repos.
 // Big Buck Bunny (c) 2008 Blender Foundation | www.bigbuckbunny.org, CC BY 3.0.
-// Live-Beispiel: öffentliche Kamera in Japan (320x240, wenige fps):
-//   http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard
+// Öffentliche Live-Kameras, die passen (geprüft 10/2026: Baseline-JPEG mit
+// Huffman-Tabellen, Frames < 16 KB; können jederzeit offline gehen):
+//   https://195.196.36.242/mjpg/video.mjpg?resolution=320x240  Pajala (S), Marktplatz, ~17 fps
+//   http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240  Italien, Kathedrale, ~3 fps
+//   http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard  Tokio, ~2 fps
 #define DEFAULT_URL "https://github.com/JKBusse/ILI9341_GFX/releases/download/demo-media/bigbuckbunny_176x320_25fps_rot.mjpeg"
 #ifndef STREAM_URL
 #define STREAM_URL ""
