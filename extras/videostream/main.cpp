@@ -52,22 +52,42 @@
 #ifndef WIFI_PASS
 #define WIFI_PASS ""
 #endif
-// Standardquelle: 2 Minuten Big Buck Bunny als MJPEG (320x176, gedreht
-// gespeichert als 176x320, 25 fps), Asset des Releases "demo-media" dieses Repos.
-// Big Buck Bunny (c) 2008 Blender Foundation | www.bigbuckbunny.org, CC BY 3.0.
-// Öffentliche Live-Kameras, die passen (geprüft 10/2026: Baseline-JPEG mit
-// Huffman-Tabellen, Frames < 16 KB; können jederzeit offline gehen):
-//   http://mzinfo.dnshome.de:5010/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50
-//     Hannover Hbf (zander-info.de), ~29 fps; 5011 Hamburger Allee ~25 fps,
-//     5009 Raschplatz ~12 fps, 5012 Wetterkamera ~1 fps. Ohne compression=50
-//     sind die Frames bis 58 KB groß und werden verworfen.
-//   https://195.196.36.242/mjpg/video.mjpg?resolution=320x240  Pajala (S), Marktplatz, ~17 fps
-//   http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240  Italien, Kathedrale, ~3 fps
-//   http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard  Tokio, ~2 fps
-#define DEFAULT_URL "https://github.com/JKBusse/ILI9341_GFX/releases/download/demo-media/bigbuckbunny_176x320_25fps_rot.mjpeg"
 #ifndef STREAM_URL
-#define STREAM_URL ""
+#define STREAM_URL "" // eigene Quelle; gesetzt kommt sie als erste in die Liste
 #endif
+
+// Quellen, mit der BOOT-Taste durchschaltbar.
+// Big Buck Bunny: 2 Minuten als MJPEG (320x176, gedreht gespeichert als
+// 176x320, 25 fps), Asset des Releases "demo-media" dieses Repos.
+// Big Buck Bunny (c) 2008 Blender Foundation | www.bigbuckbunny.org, CC BY 3.0.
+// Die Kameras sind öffentliche Live-Kameras (geprüft 10/2026: Baseline-JPEG mit
+// Huffman-Tabellen, Frames < 16 KB; können jederzeit offline gehen). Die
+// Hannover-Kameras (zander-info.de) schicken ohne compression=50 bis 58 KB
+// große Frames, die verworfen würden.
+struct Source {
+  const char *name, *url;
+};
+static const Source SOURCES[] = {
+    {"Big Buck Bunny",
+     "https://github.com/JKBusse/ILI9341_GFX/releases/download/demo-media/bigbuckbunny_176x320_25fps_rot.mjpeg"},
+    {"Hannover Hbf", "http://mzinfo.dnshome.de:5010/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+    {"Hannover Hamburger Allee",
+     "http://mzinfo.dnshome.de:5011/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+    {"Hannover Raschplatz", "http://mzinfo.dnshome.de:5009/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+    {"Hannover Wetterkamera",
+     "http://mzinfo.dnshome.de:5012/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+    {"Pajala (S), Marktplatz", "https://195.196.36.242/mjpg/video.mjpg?resolution=320x240"},
+    {"Italien, Kathedrale", "http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240"},
+    {"Tokio", "http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard"},
+};
+static const uint8_t NUM_SOURCES = sizeof(SOURCES) / sizeof(SOURCES[0]);
+static const bool OWN_URL = *STREAM_URL;
+static const uint8_t NUM_CHOICES = NUM_SOURCES + OWN_URL;
+static const Source &source(uint8_t i) {
+  static const Source own = {"Eigene Quelle", STREAM_URL};
+  return OWN_URL ? (i == 0 ? own : SOURCES[i - 1]) : SOURCES[i];
+}
+static volatile uint8_t curSource = 0; // loop() setzt, Netzwerk-Task folgt
 #ifndef STREAM_FPS
 #define STREAM_FPS 25 // Wiedergaberate für .mjpeg-Dateien (AVI: aus dem Dateikopf)
 #endif
@@ -81,6 +101,7 @@ JPEGDEC jpeg;
 struct Frame {
   uint8_t *data;
   uint32_t len;
+  uint8_t src; // Quelle, aus der der Frame stammt (alte nach dem Umschalten verwerfen)
 };
 static QueueHandle_t freeQ, fullQ; // leere Puffer -> Netzwerk, volle Frames -> Decoder
 
@@ -104,15 +125,25 @@ static void setStatus(const char *fmt, ...) {
 // Netzwerk (Core 0)
 // ---------------------------------------------------------------------------
 
-/** Liest einen verbundenen Stream und schneidet die JPEGs heraus. Kehrt zurück, wenn die Verbindung endet. */
-static void pumpStream(WiFiClient *s, HTTPClient &http) {
+/** Wartet ms, bricht aber ab, sobald eine andere Quelle gewählt wurde. */
+static bool waitUnlessSwitched(uint8_t src, uint32_t ms) {
+  for (uint32_t t = millis(); millis() - t < ms; vTaskDelay(pdMS_TO_TICKS(20)))
+    if (curSource != src) return false;
+  return true;
+}
+
+/**
+ * Liest einen verbundenen Stream und schneidet die JPEGs heraus. Kehrt zurück,
+ * wenn die Verbindung endet oder eine andere Quelle gewählt wurde.
+ */
+static void pumpStream(WiFiClient *s, HTTPClient &http, uint8_t src) {
   static uint8_t rx[4096];
-  Frame cur = {nullptr, 0};
+  Frame cur = {nullptr, 0, src};
   bool prevFF = false; // letztes Byte außerhalb eines Frames war 0xFF
   uint32_t lastData = millis();
   bool first = true;
 
-  while (http.connected() || s->available()) {
+  while ((http.connected() || s->available()) && curSource == src) {
     int avail = s->available();
     if (avail <= 0) {
       if (millis() - lastData > 5000) break; // Quelle hängt
@@ -143,7 +174,10 @@ static void pumpStream(WiFiClient *s, HTTPClient &http) {
         if (i >= n) break;
         i++;
         prevFF = false;
-        xQueueReceive(freeQ, &cur, portMAX_DELAY); // wartet, bis der Decoder einen Puffer frei gibt
+        // Warten, bis der Decoder einen Puffer frei gibt
+        while (xQueueReceive(freeQ, &cur, pdMS_TO_TICKS(50)) != pdTRUE)
+          if (curSource != src) return;
+        cur.src = src;
         cur.data[0] = 0xFF;
         cur.data[1] = 0xD8;
         cur.len = 2;
@@ -174,7 +208,7 @@ static void pumpStream(WiFiClient *s, HTTPClient &http) {
       }
       i += eoi - cur.len; // Rest des Blocks gehört zum nächsten Frame
       cur.len = eoi;
-      xQueueSend(fullQ, &cur, portMAX_DELAY);
+      xQueueSend(fullQ, &cur, portMAX_DELAY); // der Decoder nimmt immer ab, auch alte Frames
       cur.data = nullptr;
     }
   }
@@ -182,8 +216,9 @@ static void pumpStream(WiFiClient *s, HTTPClient &http) {
 }
 
 static void netTask(void *) {
-  const char *url = *STREAM_URL ? STREAM_URL : DEFAULT_URL;
   for (;;) {
+    const uint8_t src = curSource;
+    const char *url = source(src).url;
     if (WiFi.status() != WL_CONNECTED) {
       streaming = false;
       setStatus("WLAN \"%s\" ...", WIFI_SSID);
@@ -209,14 +244,18 @@ static void netTask(void *) {
     setStatus("Verbinde %s", url);
     if (!http.begin(client, url)) {
       setStatus("Ungültige URL");
-      vTaskDelay(pdMS_TO_TICKS(5000));
+      waitUnlessSwitched(src, 5000);
       continue;
     }
     int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-      setStatus("HTTP-Fehler %d", code);
+    if (curSource != src) { // während des Verbindens umgeschaltet
       http.end();
-      vTaskDelay(pdMS_TO_TICKS(3000));
+      continue;
+    }
+    if (code != HTTP_CODE_OK) {
+      setStatus("HTTP-Fehler %d, neuer Versuch", code);
+      http.end();
+      waitUnlessSwitched(src, 3000);
       continue;
     }
     statConnects++;
@@ -224,11 +263,12 @@ static void netTask(void *) {
     frameUs = type.startsWith("multipart/") ? 0 : 1000000 / STREAM_FPS;
     Serial.printf("INFO verbunden: %s, %s\n", type.c_str(), frameUs ? "Datei" : "live");
     streaming = true;
-    pumpStream(http.getStreamPtr(), http);
+    pumpStream(http.getStreamPtr(), http, src);
     http.end();
     streaming = false;
+    if (curSource != src) continue;
     setStatus("Stream beendet, neu verbinden");
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    waitUnlessSwitched(src, 1000);
   }
 }
 
@@ -240,7 +280,7 @@ static int16_t clipBottom = 0; // Zeilen ab hier gehören nicht mehr zum Bild
 static float refreshUs = 0;     // gemessene Dauer eines Panel-Refreshs
 static uint32_t statLate = 0, statMaxUs = 0; // Frames, die länger als zwei Refreshes brauchten
 
-// Anzeigemodi, mit der BOOT-Taste (oder seriell "m0".."m3") umschaltbar. Niedrige
+// Anzeigemodi, seriell mit "m0".."m3" umschaltbar. Niedrige
 // Refresh-Raten flimmern bei manchen Panels sichtbar, VSync braucht aber zwei
 // Refreshes pro Frame (~26-30 ms). Bei 50 Hz steht jeder Frame mit 25 fps exakt
 // zwei Refreshes lang, bei 75 Hz kann es knapp werden (siehe "late" in STAT).
@@ -315,7 +355,10 @@ static void showStatus() {
   tft.setTextColor(ILI9341_WHITE);
   tft.setTextSize(2);
   tft.setCursor(8, 8);
-  tft.print("Video-Stream");
+  tft.print(source(curSource).name);
+  tft.setTextSize(1);
+  tft.setCursor(8, 28);
+  tft.printf("Quelle %u/%u - BOOT: weiter", curSource + 1, NUM_CHOICES);
   tft.setTextSize(1);
   tft.setCursor(8, 40);
   tft.print(statusMsg);
@@ -346,7 +389,7 @@ void setup() {
   digitalWrite(TFT_BL, HIGH);
   tft.begin(40000000, 4); // mit WLAN nur 4 DMA-Puffer
   tft.setTextWrap(true);
-  pinMode(0, INPUT_PULLUP); // BOOT-Taste: Modus umschalten
+  pinMode(0, INPUT_PULLUP); // BOOT-Taste: nächste Quelle
   applyMode(mode);
 
   if (!*WIFI_SSID) {
@@ -388,16 +431,27 @@ void loop() {
       if (d >= '0' && d < '0' + NUM_MODES) applyMode(d - '0'), statsDirty = true;
     }
   }
+  // BOOT-Taste (entprellt): nächste Quelle. Der Netzwerk-Task bricht die
+  // laufende Verbindung ab; Frames der alten Quelle werden unten verworfen.
   static bool btnPrev = true;
+  static uint32_t btnT = 0;
   bool btn = digitalRead(0);
-  if (!btn && btnPrev) {
-    applyMode(mode + 1);
-    statsDirty = true;
+  if (!btn && btnPrev && millis() - btnT > 200) {
+    btnT = millis();
+    curSource = (curSource + 1) % NUM_CHOICES;
+    streaming = false;
+    setStatus("Verbinde ...");
+    Serial.printf("INFO Quelle %u: %s\n", curSource, source(curSource).name);
   }
   btnPrev = btn;
 
   Frame f;
-  if (xQueueReceive(fullQ, &f, pdMS_TO_TICKS(50)) == pdTRUE) {
+  bool got = xQueueReceive(fullQ, &f, pdMS_TO_TICKS(50)) == pdTRUE;
+  if (got && f.src != curSource) { // Frame der vorherigen Quelle
+    xQueueSend(freeQ, &f, 0);
+    got = false;
+  }
+  if (got) {
     static uint32_t due = 0;
     if (frameUs) { // Datei: im Takt der Bildrate zeigen
       int32_t wait = (int32_t)(due - micros());
