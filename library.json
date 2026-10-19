@@ -38,6 +38,7 @@
       "extras/demo",
       "extras/test",
       "extras/tools",
+      "extras/videostream",
       ".vscode",
       "platformio.ini"
     ]
