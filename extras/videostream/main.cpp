@@ -276,7 +276,11 @@ static void netTask(void *) {
 // Anzeige (Core 1)
 // ---------------------------------------------------------------------------
 
-static int16_t clipBottom = 0; // Zeilen ab hier gehören nicht mehr zum Bild
+// Statusleisten oben und unten (im Querformat gesehen), je BAR Pixel hoch. Das
+// Video wird dort nicht gezeichnet (Bilder mit 240 Zeilen verlieren oben und
+// unten je BAR Zeilen), so überschreibt kein Frame die Leisten.
+static const int16_t BAR = 10;
+static int16_t clipX0, clipY0, clipX1, clipY1; // sichtbarer Videobereich (exklusiv), aktuelle Rotation
 static float refreshUs = 0;     // gemessene Dauer eines Panel-Refreshs
 static uint32_t statLate = 0, statMaxUs = 0; // Frames, die länger als zwei Refreshes brauchten
 
@@ -312,13 +316,15 @@ static void applyMode(uint8_t m) {
 }
 
 static int drawMCUs(JPEGDRAW *d) {
-  int h = min(d->iHeight, clipBottom - d->y);
-  if (h <= 0) return 1;
-  if (d->iWidthUsed == d->iWidth) {
-    tft.pushImage(d->x, d->y, d->iWidth, h, d->pPixels, true);
-  } else { // rechter Rand: Zeilen einzeln, Puffer hat Breite iWidth
-    for (int r = 0; r < h; r++)
-      tft.pushImage(d->x, d->y + r, d->iWidthUsed, 1, d->pPixels + r * d->iWidth, true);
+  // Block auf den Videobereich zuschneiden (Puffer hat immer die Breite iWidth)
+  int x0 = max(d->x, (int)clipX0), x1 = min(d->x + d->iWidthUsed, (int)clipX1);
+  int y0 = max(d->y, (int)clipY0), y1 = min(d->y + d->iHeight, (int)clipY1);
+  if (x0 >= x1 || y0 >= y1) return 1;
+  const uint16_t *px = d->pPixels + (y0 - d->y) * d->iWidth + (x0 - d->x);
+  if (x1 - x0 == d->iWidth) {
+    tft.pushImage(x0, y0, x1 - x0, y1 - y0, px, true);
+  } else { // Zeilen einzeln
+    for (int y = y0; y < y1; y++, px += d->iWidth) tft.pushImage(x0, y, x1 - x0, 1, px, true);
   }
   return 1; // weiter dekodieren
 }
@@ -335,6 +341,20 @@ static void drawWifi(int16_t x, int16_t y) {
   char buf[12];
   snprintf(buf, sizeof(buf), "%4d dBm ", rssi);
   tft.setCursor(x - 16 - 4 - 6 * strlen(buf), y);
+  tft.print(buf);
+}
+
+/** Obere Leiste (Querformat): Nummer und Name der Quelle, rechts Art und Auflösung. */
+static void drawTopBar(bool live, int w, int h) {
+  tft.fillRect(0, 0, tft.width(), BAR, ILI9341_BLACK);
+  tft.setTextSize(1);
+  tft.setTextColor(ILI9341_WHITE, ILI9341_BLACK);
+  tft.setCursor(4, 1);
+  tft.printf("%u/%u %s", curSource + 1, NUM_CHOICES, source(curSource).name);
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%s %dx%d", live ? "LIVE" : "VIDEO", w, h);
+  tft.setTextColor(live ? ILI9341_RED : ILI9341_CYAN, ILI9341_BLACK);
+  tft.setCursor(tft.width() - 4 - 6 * strlen(buf), 1);
   tft.print(buf);
 }
 
@@ -474,15 +494,24 @@ void loop() {
       int16_t ox = (W - ow) / 2, oy = (H - oh) / 2;
       if (ox < 0) ox = 0; // größer als 8x320: links oben anschneiden
       if (oy < 0) oy = 0;
-      if (ow != lastW || oh != lastH) { // neues Format: Ränder einmal schwärzen
+      static uint8_t lastSrc = 0xFF;
+      if (ow != lastW || oh != lastH || lastSrc != f.src) { // neues Format/neue Quelle: Ränder und Leisten neu
         tft.fillScreen(ILI9341_BLACK);
         lastW = ow;
         lastH = oh;
+        lastSrc = f.src;
         statsDirty = true;
+        if (portrait) tft.setRotation(1);
+        drawTopBar(!frameUs, portrait ? oh : ow, portrait ? ow : oh);
+        if (portrait) tft.setRotation(0);
         Serial.printf("INFO format %dx%d -> %dx%d (1/%d)%s\n", iw, ih, ow, oh, scale,
                       portrait ? ", gedreht, VSync" : "");
       }
-      clipBottom = min<int16_t>(H, oy + oh);
+      // Videobereich ohne die Leisten: im Querformat oben/unten, gedreht links/rechts
+      clipX0 = portrait ? BAR : 0;
+      clipX1 = portrait ? W - BAR : W;
+      clipY0 = portrait ? 0 : BAR;
+      clipY1 = portrait ? H : H - BAR;
       jpeg.setPixelType(RGB565_BIG_ENDIAN);
       int opt = scale == 2 ? JPEG_SCALE_HALF : scale == 4 ? JPEG_SCALE_QUARTER : scale == 8 ? JPEG_SCALE_EIGHTH : 0;
       bool vs = portrait && MODES[mode].vsync;
@@ -499,16 +528,14 @@ void loop() {
       frames++;
       decodeUs += micros() - t;
 
-      // Statuszeile im unteren Rand (Querformat gesehen), wenn dort Platz ist;
-      // nur nach jeder neuen Sekunde, Text mit Hintergrund flackert nicht
-      int16_t band = portrait ? ox : H - (oy + oh);
-      if (statsDirty && band >= 10) {
+      // Untere Leiste: einmal pro Sekunde, Text mit Hintergrund flackert nicht
+      if (statsDirty) {
         statsDirty = false;
         if (portrait) tft.setRotation(1);
         tft.setTextSize(1);
-        tft.setTextColor(ILI9341_DARKGREY, ILI9341_BLACK);
+        tft.setTextColor(ILI9341_LIGHTGREY, ILI9341_BLACK);
         tft.setCursor(4, tft.height() - 9);
-        tft.printf("%2lu fps  %4lu kbit/s  %s ", (unsigned long)fps, (unsigned long)kbps, MODES[mode].name);
+        tft.printf("%2lu fps  %4lu kbit/s  %s ", (unsigned long)fps, (unsigned long)kbps, vs ? MODES[mode].name : "    ");
         drawWifi(tft.width() - 4, tft.height() - 9);
         if (portrait) tft.setRotation(0);
       }
