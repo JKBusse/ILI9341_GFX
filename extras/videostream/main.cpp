@@ -66,21 +66,23 @@
 // Die Kameras sind öffentliche Live-Kameras (geprüft 10/2026: Baseline-JPEG mit
 // Huffman-Tabellen, Frames < 16 KB; können jederzeit offline gehen). Die
 // Hannover-Kameras (zander-info.de) schicken ohne compression=50 bis 58 KB
-// große Frames, die verworfen würden.
+// große Frames, die verworfen würden. Die Axis-Kameras drehen das Bild mit
+// rotation=270 selbst (wie der Bunny-Clip, für VSync); Tokio kann das nicht und
+// läuft ohne VSync.
 struct Source {
   const char *name, *url;
 };
 static const Source SOURCES[] = {
     {"Big Buck Bunny",
      "https://github.com/JKBusse/ILI9341_GFX/releases/download/demo-media/bigbuckbunny_176x320_25fps_rot.mjpeg"},
-    {"Hannover Hbf", "http://mzinfo.dnshome.de:5010/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+    {"Hannover Hbf", "http://mzinfo.dnshome.de:5010/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50&rotation=270"},
     {"Hannover Hamburger Allee",
-     "http://mzinfo.dnshome.de:5011/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
-    {"Hannover Raschplatz", "http://mzinfo.dnshome.de:5009/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
+     "http://mzinfo.dnshome.de:5011/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50&rotation=270"},
+    {"Hannover Raschplatz", "http://mzinfo.dnshome.de:5009/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50&rotation=270"},
     {"Hannover Wetterkamera",
-     "http://mzinfo.dnshome.de:5012/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50"},
-    {"Pajala (S), Marktplatz", "https://195.196.36.242/mjpg/video.mjpg?resolution=320x240"},
-    {"Italien, Kathedrale", "http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240"},
+     "http://mzinfo.dnshome.de:5012/axis-cgi/mjpg/video.cgi?resolution=320x240&compression=50&rotation=270"},
+    {"Pajala (S), Marktplatz", "https://195.196.36.242/mjpg/video.mjpg?resolution=320x240&rotation=270"},
+    {"Italien, Kathedrale", "http://88.53.197.250/axis-cgi/mjpg/video.cgi?resolution=320x240&rotation=270"},
     {"Tokio", "http://61.211.241.239/nphMotionJpeg?Resolution=320x240&Quality=Standard"},
 };
 static const uint8_t NUM_SOURCES = sizeof(SOURCES) / sizeof(SOURCES[0]);
@@ -289,28 +291,35 @@ static int16_t clipX0, clipY0, clipX1, clipY1; // sichtbarer Videobereich (exklu
 static float refreshUs = 0;     // gemessene Dauer eines Panel-Refreshs
 static uint32_t statLate = 0, statMaxUs = 0; // Frames, die länger als zwei Refreshes brauchten
 
-// Anzeigemodi, seriell mit "m0".."m3" umschaltbar. Niedrige
-// Refresh-Raten flimmern bei manchen Panels sichtbar, VSync braucht aber zwei
-// Refreshes pro Frame (~26-30 ms). Bei 50 Hz steht jeder Frame mit 25 fps exakt
-// zwei Refreshes lang, bei 75 Hz kann es knapp werden (siehe "late" in STAT).
-// Die tatsächliche Rate weicht je nach Panel deutlich vom Datenblatt ab
-// (gemessen: DIVA 1/RTNA 0x18 = 46 statt 50 Hz), daher wird für die
-// VSync-Modi die langsamste Einstellung gesucht, die mindestens minHz erreicht.
+// Anzeigemodi, seriell mit "m0".."m3" umschaltbar. Niedrige Refresh-Raten
+// flimmern bei manchen Panels sichtbar, VSync braucht aber zwei Refreshes pro
+// Frame: Der Frame muss fertig sein, bevor der Bildaufbau ihn im zweiten
+// Durchlauf einholt. Bunny-Frames brauchen ~26-30 ms, Kamera-Frames (240x320,
+// mehr Daten) 33-40 ms. Deshalb wird die Rate pro Frame nachgeregelt: Zu
+// knappe Frames schalten eine Stufe langsamer, mit genug Luft geht es wieder
+// bis zur Wunschrate des Modus hoch. Bei 50 Hz steht jeder Frame mit 25 fps
+// genau zwei Refreshes lang.
+// Die tatsächlichen Raten weichen je nach Panel deutlich vom Datenblatt ab
+// (gemessen: DIVA 1/RTNA 0x18 = 46 statt 50 Hz), sie werden beim Start gemessen.
 struct Mode {
   const char *name;
-  float minHz; // VSync-Modi: Mindestrate (0 = feste Einstellung rtna)
-  uint8_t diva, rtna;
-  bool vsync;
+  float minHz; // Wunschrate mit VSync, 0 = ohne VSync mit der Standardrate (~92 Hz)
 };
 static const Mode MODES[] = {
-    {"VS50", 50.3f, 1, 0, true}, // >= 50 Hz: 25 fps = genau zwei Refreshes
-    {"VS60", 60.0f, 1, 0, true},
-    {"VS75", 75.0f, 1, 0, true},
-    {"92Hz", 0, 0, 0x18, false}, // Standard des Panels, ohne VSync (Tearing)
+    {"VS50", 50.3f}, // >= 50 Hz: 25 fps = genau zwei Refreshes
+    {"VS60", 60.0f},
+    {"VS75", 75.0f},
+    {"92Hz", 0}, // Standard des Panels, ohne VSync (Tearing)
 };
 static const uint8_t NUM_MODES = sizeof(MODES) / sizeof(MODES[0]);
 static uint8_t mode = 0; // VS50: am Panel verglichen sah das am besten aus
 static void waitVSync();
+
+static const uint8_t RTNA_MIN = 0x10, RTNA_MAX = 0x1F; // DIVA 1: Takte pro Zeile
+static float rateUs[RTNA_MAX - RTNA_MIN + 1];           // gemessene Refresh-Dauer je RTNA
+static float fastUs;                                    // Standardrate DIVA 0/RTNA 0x18
+static uint8_t prefRtna = RTNA_MAX, curRtna = RTNA_MAX; // Wunsch des Modus / aktuell
+static uint8_t hwRate = 0xFF; // auf dem Panel eingestellt: RTNA, 0 = Standardrate, 0xFF = neu setzen
 
 /** Stellt die Rate ein und misst die Dauer eines Refreshs. */
 static float measureRefreshUs(uint8_t diva, uint8_t rtna, int n) {
@@ -322,17 +331,53 @@ static float measureRefreshUs(uint8_t diva, uint8_t rtna, int n) {
   return (micros() - t) / (float)n;
 }
 
+static void calibrateRates() {
+  for (uint8_t r = RTNA_MIN; r <= RTNA_MAX; r++) rateUs[r - RTNA_MIN] = measureRefreshUs(1, r, 8);
+  fastUs = measureRefreshUs(0, 0x18, 8);
+  Serial.printf("INFO refresh %.1f..%.1f Hz (DIVA 1), Standard %.1f Hz\n", 1e6f / rateUs[RTNA_MAX - RTNA_MIN],
+                1e6f / rateUs[0], 1e6f / fastUs);
+  hwRate = 0xFF;
+}
+
+/** Panel-Rate passend zum Frame: mit VSync die aktuelle Stufe, sonst die Standardrate. */
+static void setPanelRate(bool vsync) {
+  uint8_t want = vsync ? curRtna : 0;
+  if (want == hwRate) return;
+  hwRate = want;
+  if (vsync) {
+    tft.setFrameRate(1, curRtna);
+    refreshUs = rateUs[curRtna - RTNA_MIN];
+  } else {
+    tft.setFrameRate(0, 0x18);
+    refreshUs = fastUs;
+  }
+}
+
 static void applyMode(uint8_t m) {
   mode = m % NUM_MODES;
   const Mode &md = MODES[mode];
-  uint8_t rtna = md.rtna;
-  if (md.minHz > 0) { // langsamste Einstellung (höchstes RTNA) mit mindestens minHz
-    for (rtna = 0x1F; rtna > 0x10; rtna--)
-      if (1e6f / measureRefreshUs(md.diva, rtna, 4) >= md.minHz) break;
+  if (md.minHz > 0) { // langsamste Stufe (höchstes RTNA) mit mindestens minHz
+    for (prefRtna = RTNA_MAX; prefRtna > RTNA_MIN; prefRtna--)
+      if (1e6f / rateUs[prefRtna - RTNA_MIN] >= md.minHz) break;
+    curRtna = prefRtna;
   }
-  refreshUs = measureRefreshUs(md.diva, rtna, 10);
+  hwRate = 0xFF;
   statLate = 0;
-  Serial.printf("INFO mode=%s rtna=0x%02X refresh=%.1f Hz\n", md.name, rtna, 1e6f / refreshUs);
+  Serial.printf("INFO mode=%s rtna=0x%02X (%.1f Hz)\n", md.name, prefRtna, 1e6f / rateUs[prefRtna - RTNA_MIN]);
+}
+
+/** Nach jedem VSync-Frame: Rate an die gemessene Frame-Dauer anpassen. */
+static void adaptRate(uint32_t us) {
+  static uint32_t winMax = 0;
+  static uint8_t winN = 0;
+  if (us > winMax) winMax = us;
+  if (us > 1.9f * refreshUs && curRtna < RTNA_MAX) { // zu knapp: eine Stufe langsamer
+    curRtna++;
+    winMax = winN = 0;
+  } else if (++winN >= 50) { // 2 s mit genug Luft: eine Stufe schneller (bis zur Wunschrate)
+    if (curRtna > prefRtna && winMax < 1.75f * rateUs[curRtna - 1 - RTNA_MIN]) curRtna--;
+    winMax = winN = 0;
+  }
 }
 
 static int drawMCUs(JPEGDRAW *d) {
@@ -343,8 +388,11 @@ static int drawMCUs(JPEGDRAW *d) {
   const uint16_t *px = d->pPixels + (y0 - d->y) * d->iWidth + (x0 - d->x);
   if (x1 - x0 == d->iWidth) {
     tft.pushImage(x0, y0, x1 - x0, y1 - y0, px, true);
-  } else { // Zeilen einzeln
-    for (int y = y0; y < y1; y++, px += d->iWidth) tft.pushImage(x0, y, x1 - x0, 1, px, true);
+  } else { // ein Fenster, die Zeilen nacheinander hinein (Zeilenabstand iWidth)
+    tft.startWrite();
+    tft.setAddrWindow(x0, y0, x1 - x0, y1 - y0);
+    for (int y = y0; y < y1; y++, px += d->iWidth) tft.writePixels(px, x1 - x0, true);
+    tft.endWrite();
   }
   return 1; // weiter dekodieren
 }
@@ -378,13 +426,17 @@ static void drawTopBar(bool live, int w, int h) {
   tft.print(buf);
 }
 
-/** Wartet, bis der Bildaufbau des Panels wieder oben beginnt (Scanline springt zurück). */
+/**
+ * Wartet, bis der Bildaufbau des Panels wieder oben beginnt: die Scanline
+ * springt von unten (> 160) nach oben (< 40). Ein kleiner Rücksprung durch
+ * einen Lesefehler zählt so nicht als Bildanfang.
+ */
 static void waitVSync() {
   uint16_t prev = tft.getScanline();
   uint32_t t = micros();
   while (micros() - t < 50000) {
     uint16_t l = tft.getScanline();
-    if (l < prev) return;
+    if (prev > 160 && l < 40) return;
     prev = l;
   }
 }
@@ -438,6 +490,7 @@ void setup() {
   tft.begin(40000000, 4); // mit WLAN nur 4 DMA-Puffer
   tft.setTextWrap(true);
   pinMode(0, INPUT_PULLUP); // BOOT-Taste: nächste Quelle
+  calibrateRates();
   applyMode(mode);
 
   // WLAN-Daten: aus dem Build übernehmen und speichern, sonst aus dem NVS
@@ -550,7 +603,8 @@ void loop() {
       clipY1 = portrait ? H : H - BAR;
       jpeg.setPixelType(RGB565_BIG_ENDIAN);
       int opt = scale == 2 ? JPEG_SCALE_HALF : scale == 4 ? JPEG_SCALE_QUARTER : scale == 8 ? JPEG_SCALE_EIGHTH : 0;
-      bool vs = portrait && MODES[mode].vsync;
+      bool vs = portrait && MODES[mode].minHz > 0;
+      setPanelRate(vs);
       if (vs) waitVSync();
       uint32_t t = micros();
       if (!jpeg.decode(ox, oy, opt)) statDropped++;
@@ -560,6 +614,7 @@ void loop() {
         uint32_t us = micros() - t;
         if (us > statMaxUs) statMaxUs = us;
         if (us > 2 * refreshUs) statLate++;
+        adaptRate(us);
       }
       frames++;
       decodeUs += micros() - t;
@@ -571,7 +626,9 @@ void loop() {
         tft.setTextSize(1);
         tft.setTextColor(ILI9341_LIGHTGREY, ILI9341_BLACK);
         tft.setCursor(4, tft.height() - 9);
-        tft.printf("%2lu fps  %4lu kbit/s  %s ", (unsigned long)fps, (unsigned long)kbps, vs ? MODES[mode].name : "    ");
+        char hz[12] = "";
+        if (vs) snprintf(hz, sizeof(hz), "VSync %.0f Hz", 1e6f / refreshUs);
+        tft.printf("%2lu fps  %4lu kbit/s  %-12s", (unsigned long)fps, (unsigned long)kbps, hz);
         drawWifi(tft.width() - 4, tft.height() - 9);
         if (portrait) tft.setRotation(0);
       }
