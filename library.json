@@ -1,6 +1,6 @@
 {
   "name": "ILI9341_GFX",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Fast ILI9341 SPI driver for the ESP32, compatible with Adafruit_GFX: register-level DMA driver, hardware D/C via SPI dual output, framebuffer with dirty-region updates, tear-free VSync and hardware scrolling",
   "keywords": "ili9341, tft, display, adafruit_gfx, spi, dma, esp32, framebuffer, vsync",
   "repository": {
